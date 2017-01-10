@@ -19,45 +19,41 @@ class Card:
             return True
         return type(self) == type(other) == Number and self.value == other.value - 1 and self.suit != other.suit
 
-    def key(self):
-        return None
-
     def __eq__(self, other):
-        return self.key() == other.key()
+        return self.key == other.key
 
     def __hash__(self):
-        return hash(self.key())
+        return self.hash
 
 
 class Flower(Card):
+    def __init__(self):
+        self.key = None
+        self.hash = hash(self.key)
+
     def __str__(self):
         return 'F  '
-
-    def key(self):
-        return None
 
 
 class Dragon(Card):
     def __init__(self, suit):
         self.suit = suit
+        self.key = self.suit
+        self.hash = hash(self.key)
 
     def __str__(self):
         return 'D' + self.suit + ' '
-
-    def key(self):
-        return self.suit
 
 
 class Number(Card):
     def __init__(self, suit, value):
         self.suit = suit
         self.value = value
+        self.key = (self.suit, self.value)
+        self.hash = hash(self.key)
 
     def __str__(self):
         return 'N' + self.suit + str(self.value)
-
-    def key(self):
-        return self.suit, self.value
 
 
 # Space classes
@@ -311,7 +307,6 @@ class Solver:
                     self.board_list.pop()
                     if not self.board_list:
                         # If there are no more boards to pop, then the board is unsolvable.
-                        print('Unsolvable.')
                         return False
 
             self.board_list.append(board)
@@ -379,13 +374,12 @@ if __name__ == '__main__':
     solver = Solver()
     board = Board()
 
-    '''
-    seed(29)
-    board.randomize()
-    cProfile.run('solver.solve(board)')
-    #solved = solver.solve(board)
-    exit()
-    '''
+    if True:
+        seed(29)
+        board.randomize()
+        cProfile.run('solver.solve(board)')
+        #solved = solver.solve(board)
+        exit()
 
     for i in [29]:
         seed(i)
