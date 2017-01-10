@@ -1,4 +1,7 @@
 import unittest
+from time import perf_counter
+import cProfile
+
 from copy import deepcopy
 from random import shuffle, seed
 
@@ -266,7 +269,7 @@ class Board:
         return s
 
     def key(self):
-        return tuple(self.main) + tuple(self.free) + tuple(self.goal) + (self.flower,)
+        return (frozenset(self.main),) + (frozenset(self.free),) + tuple(self.goal) + (self.flower,)
 
     def __eq__(self, other):
         return self.key() == other.key()
@@ -281,41 +284,43 @@ class BoardHolder:
         self.next = board.next()
 
 
-def solve(board):
-    """ Solve the puzzle using backtracking """
+class Solver:
+    def __init(self):
+        self.board_list = []
+        self.count = 0
 
-    i = 0
+    def solve(self, board):
+        """ Solve the puzzle using backtracking """
 
-    board_list = [BoardHolder(board)]
-    board_set = {board}
+        self.count = 0
 
-    while not board.is_solved():
+        self.board_list = [BoardHolder(board)]
+        self.board_cache = {board}
 
-        # Generate the next board
-        while True:
-            try:
-                board = next(board_list[-1].next)
-                if board not in board_set:
-                    break
-            except StopIteration:
-                # If there are no more boards to generate, then pop the board and continue from the previous
-                board_list.pop().board
-                #print('Popping the board, length now = {}'.format(len(board_list)))
-                if not board_list:
-                    # If there are no more boards to pop, then the board is unsolvable.
-                    print('Unsolvable.')
-                    return
+        while not board.is_solved():
 
-        board_list.append(BoardHolder(board))
-        board_set.add(board)
-        #print('Appending the board, length now = {}'.format(len(board_list)))
-        i += 1
-        if not i % 1000:
-            print(i)
-            print(board)
+            # Generate the next board
+            while True:
+                try:
+                    board = next(self.board_list[-1].next)
+                    if board not in self.board_cache:
+                        break
+                except StopIteration:
+                    # If there are no more boards to generate, then pop the board and continue from the previous
+                    self.board_list.pop().board
+                    if not self.board_list:
+                        # If there are no more boards to pop, then the board is unsolvable.
+                        print('Unsolvable.')
+                        return False
 
-    for b in board_list:
-        print(b.board)
+            self.board_list.append(BoardHolder(board))
+            self.board_cache.add(board)
+            self.count += 1
+        return True
+
+        #print(i)
+        #for b in board_list:
+        #    print(b.board)
 
 
 class Tests(unittest.TestCase):
@@ -332,6 +337,24 @@ class Tests(unittest.TestCase):
         self.assertEqual(b, b2)
         b.main[1].cards.append(b.main[2].cards.pop())
         self.assertNotEqual(b, b2)
+
+        # Test free space symmetry
+        b = Board()
+        b.free[0].cards.append(Dragon(SUITS[0]))
+        b.free[1].cards.append(Dragon(SUITS[1]))
+        b2 = Board()
+        b2.free[2].cards.append(Dragon(SUITS[0]))
+        b2.free[0].cards.append(Dragon(SUITS[1]))
+        self.assertEqual(b, b2)
+
+        # Test main space symmetry
+        b = Board()
+        b.main[0].cards.append(Dragon(SUITS[0]))
+        b.main[1].cards.append(Dragon(SUITS[1]))
+        b2 = Board()
+        b2.main[2].cards.append(Dragon(SUITS[0]))
+        b2.main[0].cards.append(Dragon(SUITS[1]))
+        self.assertEqual(b, b2)
 
     def test_board_hashing(self):
         b = Board()
@@ -352,21 +375,22 @@ class Tests(unittest.TestCase):
 
 
 if __name__ == '__main__':
-    seed(4)
-
+    solver = Solver()
     board = Board()
+
+    seed(21)
     board.randomize()
-    solve(board)
+    cProfile.run('solver.solve(board)')
+    #solved = solver.solve(board)
+    exit()
 
-    """
-    for i in range(3, 6):
-        board.main[i].cards = []
-    board.free[0].cards.append(Dragon(SUITS[0]))
-    board.main[0].cards.append(Dragon(SUITS[0]))
-    board.main[1].cards.append(Dragon(SUITS[0]))
-    print(board)
+    for i in range(100):
+        seed(i)
+        board.randomize()
 
-    for next_board in board.next():
-        print(next_board)
-    """
+        start = perf_counter()
+        solved = solver.solve(board)
+        duration = perf_counter() - start
 
+        print('Seed {} {} in {:.3f} seconds after {} boards tested'.format(
+                i, 'solved' if solved else 'found unsolvable', duration, solver.count))
