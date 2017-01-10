@@ -284,12 +284,6 @@ class Board:
         return hash(self.key())
 
 
-class BoardHolder:
-    def __init__(self, board):
-        self.board = board
-        self.next = board.next()
-
-
 class Solver:
     def __init(self):
         self.board_list = []
@@ -297,10 +291,10 @@ class Solver:
 
     def solve(self, board):
         """ Solve the puzzle using backtracking """
+        board.next = board.next()
 
         self.count = 0
-
-        self.board_list = [BoardHolder(board)]
+        self.board_list = [board]
         self.board_cache = {board}
 
         while not board.is_solved():
@@ -310,16 +304,17 @@ class Solver:
                 try:
                     board = next(self.board_list[-1].next)
                     if board not in self.board_cache:
+                        board.next = board.next()
                         break
                 except StopIteration:
                     # If there are no more boards to generate, then pop the board and continue from the previous
-                    self.board_list.pop().board
+                    self.board_list.pop()
                     if not self.board_list:
                         # If there are no more boards to pop, then the board is unsolvable.
                         print('Unsolvable.')
                         return False
 
-            self.board_list.append(BoardHolder(board))
+            self.board_list.append(board)
             self.board_cache.add(board)
             self.count += 1
         return True
@@ -385,13 +380,14 @@ if __name__ == '__main__':
     board = Board()
 
     '''
-    seed(21)
+    seed(29)
     board.randomize()
     cProfile.run('solver.solve(board)')
     #solved = solver.solve(board)
     exit()
     '''
-    for i in range(100):
+
+    for i in [29]:
         seed(i)
         board.randomize()
 
