@@ -128,7 +128,7 @@ class Board:
             for height in range(1, len(src.cards)+1):
                 # Break when the stack becomes unmovable
                 if height > 1:
-                    if not (type(src.cards[-height+1]) == type(src.cards[-height]) == Number and
+                    if not (isinstance(src.cards[-height+1], Number) and isinstance(src.cards[-height], Number) and
                             src.cards[-height+1].value == src.cards[-height].value - 1 and
                             src.cards[-height+1].suit != src.cards[-height].suit):
                         break
@@ -145,7 +145,7 @@ class Board:
 
                     if dst.cards:
                         # If it can be stacked on
-                        if (type(src.cards[-height]) == type(dst.cards[-1]) == Number and
+                        if (isinstance(src.cards[-height], Number) and isinstance(dst.cards[-1], Number) and
                                 src.cards[-height].value == dst.cards[-1].value - 1 and
                                 src.cards[-height].suit != dst.cards[-1].suit):
                             # Copy, move, and yield
@@ -177,7 +177,7 @@ class Board:
                         break
 
                 # To goal spaces
-                if type(src.cards[-1]) == Number and (
+                if isinstance(src.cards[-1], Number) and (
                         (self.goal[src.cards[-1].suit].cards and src.cards[-1].value == self.goal[src.cards[-1].suit].cards[-1].value + 1) or
                         (not self.goal[src.cards[-1].suit].cards and src.cards[-1].value == VALUES[0])):
                     # Copy, move, and yield
@@ -187,7 +187,7 @@ class Board:
                     break
 
                 # To flower space
-                if type(src.cards[-1]) == Flower:
+                if isinstance(src.cards[-1], Flower):
                     # Copy, move, and yield
                     new_board = Board(self)
                     new_board.flower.append(new_board.main[src_i].pop())
@@ -197,9 +197,9 @@ class Board:
         for src_i, src in enumerate(self.free):
             if len(src.cards) == 1:
                 # To goal spaces
-                if type(src.cards[-1]) == Number and (
-                            (self.goal[src.cards[-1].suit].cards and src.cards[-1].value == self.goal[src.cards[-1].suit].cards[-1].value + 1) or
-                            (not self.goal[src.cards[-1].suit].cards and src.cards[-1].value == VALUES[0])):
+                if isinstance(src.cards[-1], Number) and (
+                        (self.goal[src.cards[-1].suit].cards and src.cards[-1].value == self.goal[src.cards[-1].suit].cards[-1].value + 1) or
+                        (not self.goal[src.cards[-1].suit].cards and src.cards[-1].value == VALUES[0])):
                     # Copy, move, and yield
                     new_board = Board(self)
                     new_board.goal[src.cards[-1].suit].append(new_board.free[src_i].pop())
@@ -211,7 +211,7 @@ class Board:
                 for dst_i, dst in enumerate(self.main):
                     if dst.cards:
                         # If it can be stacked on
-                        if (type(src.cards[-1]) == type(dst.cards[-1]) == Number and
+                        if (isinstance(src.cards[-1], Number) and  isinstance(dst.cards[-1], Number) and
                                 src.cards[-1].value == dst.cards[-1].value - 1 and
                                 src.cards[-1].suit != dst.cards[-1].suit):
                             # Copy, move, and yield
@@ -228,15 +228,15 @@ class Board:
                         yield new_board
 
                 # If dragon, try to 'collect' dragons
-                if type(src.cards[-1]) == Dragon:
+                if isinstance(src.cards[-1], Dragon):
                     suit = src.cards[-1].suit
                     main_dragons = []
                     for i, space in enumerate(self.main):
-                        if space.cards and type(space.cards[-1]) == Dragon and space.cards[-1].suit == suit:
+                        if space.cards and isinstance(space.cards[-1], Dragon) and space.cards[-1].suit == suit:
                             main_dragons.append(i)
                     free_dragons = []
                     for i, space in enumerate(self.free):
-                        if space.cards and type(space.cards[-1]) == Dragon and space.cards[-1].suit == suit:
+                        if space.cards and isinstance(space.cards[-1], Dragon) and space.cards[-1].suit == suit:
                             free_dragons.append(i)
 
                     # If the length of the lists of dragon spaces is 4, then pop them all to the free space.
@@ -398,13 +398,19 @@ if __name__ == '__main__':
         cProfile.run('solver.solve(board)')
         exit()
 
-    for i in [3,2,15,48,21,29,47,8]:
+    longest = 0
+    longest_seed = 0
+    for i in range(1000):
         seed(i)
         board.randomize()
         #print(board)
         start = perf_counter()
         solved = solver.solve(board)
         duration = perf_counter() - start
-
+        if duration > longest:
+            longest = duration
+            longest_seed = i
         print('Seed {} {} in {:.3f} seconds after {} boards tested'.format(
                 i, 'solved' if solved else 'found unsolvable', duration, solver.count))
+
+    print('Longest time to solve was {:.3f} seconds for seed {}'.format(longest, longest_seed))
