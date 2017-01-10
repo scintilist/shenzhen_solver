@@ -299,9 +299,10 @@ class Board:
 
 
 class Solver:
-    def __init(self):
+    def __init__(self):
         self.board_list = []
         self.count = 0
+        self.timeout = 0
 
     def solve(self, board):
         """ Solve the puzzle using backtracking """
@@ -311,6 +312,7 @@ class Solver:
         self.board_list = [board]
         self.board_cache = {board}
 
+        start_time = perf_counter()
         while not board.is_solved():
 
             # Generate the next board
@@ -325,12 +327,15 @@ class Solver:
                     self.board_list.pop()
                     if not self.board_list:
                         # If there are no more boards to pop, then the board is unsolvable.
-                        return False
+                        return 'unsolvable'
 
             self.board_list.append(board)
             self.board_cache.add(board)
             self.count += 1
-        return True
+            if not self.count % 1000 and self.timeout:
+                if perf_counter() - start_time > self.timeout:
+                    return 'timed out'
+        return 'solved'
 
         #print(i)
         #for b in board_list:
@@ -390,6 +395,7 @@ class Tests(unittest.TestCase):
 
 if __name__ == '__main__':
     solver = Solver()
+    #solver.timeout = 2
     board = Board()
 
     if False:
@@ -411,6 +417,6 @@ if __name__ == '__main__':
             longest = duration
             longest_seed = i
         print('Seed {} {} in {:.3f} seconds after {} boards tested'.format(
-                i, 'solved' if solved else 'found unsolvable', duration, solver.count))
+                i, solved, duration, solver.count))
 
     print('Longest time to solve was {:.3f} seconds for seed {}'.format(longest, longest_seed))
