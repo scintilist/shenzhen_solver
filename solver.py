@@ -2,7 +2,6 @@ import unittest
 from time import perf_counter
 import cProfile
 
-from copy import deepcopy
 from random import shuffle, seed
 
 """ Constants """
@@ -96,12 +95,19 @@ class Main(Space):
 
 # Board Class
 class Board:
-    def __init__(self):
-        """ Create the empty board """
-        self.main = [Main() for _ in range(COLUMNS)]
-        self.free = [Free() for _ in range(len(SUITS))]
-        self.goal = {suit: Goal(suit) for suit in SUITS}
-        self.flower = FlowerSpace()
+    def __init__(self, board=None):
+        """ Create the empty board, or copy the board """
+        if board:
+            # Cards are only moved, never modified, so it is ok to copy card references, and not duplicate cards
+            self.main = [Main(space.cards[:]) for space in board.main]
+            self.free = [Main(space.cards[:]) for space in board.free]
+            self.goal = {suit: Goal(suit, board.goal[suit].cards[:]) for suit in SUITS}
+            self.flower = FlowerSpace(board.flower.cards[:])
+        else:
+            self.main = [Main() for _ in range(COLUMNS)]
+            self.free = [Free() for _ in range(len(SUITS))]
+            self.goal = {suit: Goal(suit) for suit in SUITS}
+            self.flower = FlowerSpace()
 
     def randomize(self):
         """ Create a random board """
@@ -149,7 +155,7 @@ class Board:
                         if not dst.cards:
                             moved_to_empty = True
                         # Copy, move, and yield
-                        new_board = deepcopy(self)
+                        new_board = Board(self)
                         new_board.main[dst_i].cards.extend(new_board.main[src_i].cards[-height:])
                         new_board.main[src_i].cards = new_board.main[src_i].cards[:-height]
                         yield new_board
@@ -160,7 +166,7 @@ class Board:
                 for dst_i, dst in enumerate(self.free):
                     if not dst.cards:
                         # Copy, move, and yield
-                        new_board = deepcopy(self)
+                        new_board = Board(self)
                         new_board.free[dst_i].cards.append(new_board.main[src_i].cards.pop())
                         yield new_board
                         break
@@ -170,7 +176,7 @@ class Board:
                         (self.goal[src.cards[-1].suit].cards and src.cards[-1].value == self.goal[src.cards[-1].suit].cards[-1].value + 1) or
                         (not self.goal[src.cards[-1].suit].cards and src.cards[-1].value == VALUES[0])):
                     # Copy, move, and yield
-                    new_board = deepcopy(self)
+                    new_board = Board(self)
                     new_board.goal[src.cards[-1].suit].cards.append(new_board.main[src_i].cards.pop())
                     yield new_board
                     break
@@ -178,7 +184,7 @@ class Board:
                 # To flower space
                 if type(src.cards[-1]) == Flower:
                     # Copy, move, and yield
-                    new_board = deepcopy(self)
+                    new_board = Board(self)
                     new_board.flower.cards.append(new_board.main[src_i].cards.pop())
                     yield new_board
 
@@ -190,7 +196,7 @@ class Board:
                             (self.goal[src.cards[-1].suit].cards and src.cards[-1].value == self.goal[src.cards[-1].suit].cards[-1].value + 1) or
                             (not self.goal[src.cards[-1].suit].cards and src.cards[-1].value == VALUES[0])):
                     # Copy, move, and yield
-                    new_board = deepcopy(self)
+                    new_board = Board(self)
                     new_board.goal[src.cards[-1].suit].cards.append(new_board.free[src_i].cards.pop())
                     yield new_board
                     break
@@ -203,7 +209,7 @@ class Board:
                         if not dst.cards:
                             moved_to_empty = True
                         # Copy, move, and yield
-                        new_board = deepcopy(self)
+                        new_board = Board(self)
                         new_board.main[dst_i].cards.append(new_board.free[src_i].cards.pop())
                         yield new_board
 
@@ -222,7 +228,7 @@ class Board:
                     # If the length of the lists of dragon spaces is 4, then pop them all to the free space.
                     if len(free_dragons) + len(main_dragons) == DRAGONS:
                         # Copy, move, and yield
-                        new_board = deepcopy(self)
+                        new_board = Board(self)
                         for i in free_dragons:
                             new_board.free[src_i].cards.append(new_board.free[i].cards.pop())
                         for i in main_dragons:
@@ -333,7 +339,7 @@ class Tests(unittest.TestCase):
     def test_board_compare(self):
         b = Board()
         b.randomize()
-        b2 = deepcopy(b)
+        b2 = Board(self)
         self.assertEqual(b, b2)
         b.main[1].cards.append(b.main[2].cards.pop())
         self.assertNotEqual(b, b2)
@@ -359,7 +365,7 @@ class Tests(unittest.TestCase):
     def test_board_hashing(self):
         b = Board()
         b.randomize()
-        b2 = deepcopy(b)
+        b2 = Board(self)
         self.assertTrue(len({b, b2}) == 1)
         b.main[1].cards.append(b.main[2].cards.pop())
         self.assertTrue(len({b, b2}) == 2)
@@ -378,12 +384,13 @@ if __name__ == '__main__':
     solver = Solver()
     board = Board()
 
+    '''
     seed(21)
     board.randomize()
     cProfile.run('solver.solve(board)')
     #solved = solver.solve(board)
     exit()
-
+    '''
     for i in range(100):
         seed(i)
         board.randomize()
