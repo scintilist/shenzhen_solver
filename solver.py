@@ -5,6 +5,7 @@ import cProfile
 from random import shuffle, seed
 from collections import namedtuple
 
+
 """ Constants """
 COLUMNS = 8              # Number of Columns in the main board
 ROWS = 5                 # Number of rows in the main board
@@ -30,17 +31,37 @@ def card_str(card):
 
 # Space classes
 class Space:
-    def __init__(self, cards):
-        self.cards = cards
+    def __init__(self, space=None):
+        if space:
+            self.cards = space.cards[:]
+            self.key = space.key
+            self.hash = space.hash
+        else:
+            self.cards = []
+            self.update()
 
-    def key(self):
-        return tuple(self.cards)
+    def append(self, card):
+        self.cards.append(card)
+        self.update()
+
+    def extend(self, cards):
+        self.cards.extend(cards)
+        self.update()
+
+    def pop(self):
+        card = self.cards.pop()
+        self.update()
+        return card
+
+    def update(self):
+        self.key = tuple(self.cards)
+        self.hash = hash(self.key)
 
     def __eq__(self, other):
-        return self.key() == other.key()
+        return self.key == other.key
 
     def __hash__(self):
-        return hash(self.key())
+        return self.hash
 
 
 class FlowerSpace(Space):
@@ -48,9 +69,7 @@ class FlowerSpace(Space):
 
 
 class Goal(Space):
-    def __init__(self, suit, cards):
-        self.suit = suit
-        super().__init__(cards)
+    pass
 
 
 class Free(Space):
@@ -67,15 +86,15 @@ class Board:
         """ Create the empty board, or copy the board """
         if board:
             # Cards are only moved, never modified, so it is ok to copy card references, and not duplicate cards
-            self.main = [Main(space.cards[:]) for space in board.main]
-            self.free = [Main(space.cards[:]) for space in board.free]
-            self.goal = {suit: Goal(suit, board.goal[suit].cards[:]) for suit in SUITS}
-            self.flower = FlowerSpace(board.flower.cards[:])
+            self.main = [Main(space) for space in board.main]
+            self.free = [Main(space) for space in board.free]
+            self.goal = {suit: Goal(space) for suit, space in board.goal.items()}
+            self.flower = FlowerSpace(board.flower)
         else:
-            self.main = [Main([]) for _ in range(COLUMNS)]
-            self.free = [Free([]) for _ in range(len(SUITS))]
-            self.goal = {suit: Goal(suit, []) for suit in SUITS}
-            self.flower = FlowerSpace([])
+            self.main = [Main() for _ in range(COLUMNS)]
+            self.free = [Free() for _ in range(len(SUITS))]
+            self.goal = {suit: Goal() for suit in SUITS}
+            self.flower = FlowerSpace()
 
     def randomize(self):
         """ Create a random board """
@@ -90,12 +109,16 @@ class Board:
 
         # Shuffle lay out the 8 columns of 5 cards each
         shuffle(deck)
-        self.main = [Main(list(cards)) for cards in zip(*[iter(deck)]*ROWS)]
+        self.main = []
+        for cards in zip(*[iter(deck)] * ROWS):
+            space = Main()
+            space.extend(cards)
+            self.main.append(space)
 
         # Create the free spaces, goal spaces, and flower space
-        self.free = [Free([]) for _ in range(len(SUITS))]
-        self.goal = {suit: Goal(suit, []) for suit in SUITS}
-        self.flower = FlowerSpace([])
+        self.free = [Free() for _ in range(len(SUITS))]
+        self.goal = {suit: Goal() for suit in SUITS}
+        self.flower = FlowerSpace()
 
     def next(self):
         """ generator that yields all possible boards which can be reached with a valid move from the current board """
@@ -127,8 +150,9 @@ class Board:
                                 src.cards[-height].suit != dst.cards[-1].suit):
                             # Copy, move, and yield
                             new_board = Board(self)
-                            new_board.main[dst_i].cards.extend(new_board.main[src_i].cards[-height:])
+                            new_board.main[dst_i].extend(new_board.main[src_i].cards[-height:])
                             new_board.main[src_i].cards = new_board.main[src_i].cards[:-height]
+                            new_board.main[src_i].update()
                             yield new_board
 
                     elif not moved_to_empty:
@@ -136,8 +160,9 @@ class Board:
                         moved_to_empty = True
                         # Copy, move, and yield
                         new_board = Board(self)
-                        new_board.main[dst_i].cards.extend(new_board.main[src_i].cards[-height:])
+                        new_board.main[dst_i].extend(new_board.main[src_i].cards[-height:])
                         new_board.main[src_i].cards = new_board.main[src_i].cards[:-height]
+                        new_board.main[src_i].update()
                         yield new_board
 
             # Single card moves
@@ -147,7 +172,7 @@ class Board:
                     if not dst.cards:
                         # Copy, move, and yield
                         new_board = Board(self)
-                        new_board.free[dst_i].cards.append(new_board.main[src_i].cards.pop())
+                        new_board.free[dst_i].append(new_board.main[src_i].pop())
                         yield new_board
                         break
 
@@ -157,7 +182,7 @@ class Board:
                         (not self.goal[src.cards[-1].suit].cards and src.cards[-1].value == VALUES[0])):
                     # Copy, move, and yield
                     new_board = Board(self)
-                    new_board.goal[src.cards[-1].suit].cards.append(new_board.main[src_i].cards.pop())
+                    new_board.goal[src.cards[-1].suit].append(new_board.main[src_i].pop())
                     yield new_board
                     break
 
@@ -165,7 +190,7 @@ class Board:
                 if type(src.cards[-1]) == Flower:
                     # Copy, move, and yield
                     new_board = Board(self)
-                    new_board.flower.cards.append(new_board.main[src_i].cards.pop())
+                    new_board.flower.append(new_board.main[src_i].pop())
                     yield new_board
 
         # Free space moves
@@ -177,7 +202,7 @@ class Board:
                             (not self.goal[src.cards[-1].suit].cards and src.cards[-1].value == VALUES[0])):
                     # Copy, move, and yield
                     new_board = Board(self)
-                    new_board.goal[src.cards[-1].suit].cards.append(new_board.free[src_i].cards.pop())
+                    new_board.goal[src.cards[-1].suit].append(new_board.free[src_i].pop())
                     yield new_board
                     break
 
@@ -191,7 +216,7 @@ class Board:
                                 src.cards[-1].suit != dst.cards[-1].suit):
                             # Copy, move, and yield
                             new_board = Board(self)
-                            new_board.main[dst_i].cards.append(new_board.free[src_i].cards.pop())
+                            new_board.main[dst_i].append(new_board.free[src_i].pop())
                             yield new_board
 
                     elif not moved_to_empty:
@@ -199,7 +224,7 @@ class Board:
                         moved_to_empty = True
                         # Copy, move, and yield
                         new_board = Board(self)
-                        new_board.main[dst_i].cards.append(new_board.free[src_i].cards.pop())
+                        new_board.main[dst_i].append(new_board.free[src_i].pop())
                         yield new_board
 
                 # If dragon, try to 'collect' dragons
@@ -219,9 +244,9 @@ class Board:
                         # Copy, move, and yield
                         new_board = Board(self)
                         for i in free_dragons:
-                            new_board.free[src_i].cards.append(new_board.free[i].cards.pop())
+                            new_board.free[src_i].append(new_board.free[i].pop())
                         for i in main_dragons:
-                            new_board.free[src_i].cards.append(new_board.main[i].cards.pop())
+                            new_board.free[src_i].append(new_board.main[i].pop())
                         yield new_board
 
     def is_solved(self):
@@ -280,7 +305,7 @@ class Solver:
 
     def solve(self, board):
         """ Solve the puzzle using backtracking """
-        board.next = board.next()
+        board.next_board = board.next()
 
         self.count = 0
         self.board_list = [board]
@@ -291,9 +316,9 @@ class Solver:
             # Generate the next board
             while True:
                 try:
-                    board = next(self.board_list[-1].next)
+                    board = next(self.board_list[-1].next_board)
                     if board not in self.board_cache:
-                        board.next = board.next()
+                        board.next_board = board.next()
                         break
                 except StopIteration:
                     # If there are no more boards to generate, then pop the board and continue from the previous
@@ -324,7 +349,7 @@ class Tests(unittest.TestCase):
         b.randomize()
         b2 = Board(b)
         self.assertEqual(b, b2)
-        b.main[1].cards.append(b.main[2].cards.pop())
+        b.main[1].append(b.main[2].pop())
         self.assertNotEqual(b, b2)
 
         # Test free space symmetry
@@ -350,7 +375,7 @@ class Tests(unittest.TestCase):
         b.randomize()
         b2 = Board(b)
         self.assertTrue(len({b, b2}) == 1)
-        b.main[1].cards.append(b.main[2].cards.pop())
+        b.main[1].append(b.main[2].pop())
         self.assertTrue(len({b, b2}) == 2)
 
     def test_solved(self):
@@ -368,16 +393,15 @@ if __name__ == '__main__':
     board = Board()
 
     if False:
-        seed(29)
+        seed(47)
         board.randomize()
         cProfile.run('solver.solve(board)')
-        #solved = solver.solve(board)
         exit()
 
-    for i in [47]:
+    for i in [3,2,15,48,21,29,47,8]:
         seed(i)
         board.randomize()
-        print(board)
+        #print(board)
         start = perf_counter()
         solved = solver.solve(board)
         duration = perf_counter() - start
