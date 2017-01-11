@@ -4,6 +4,11 @@ import cProfile
 
 from random import shuffle, seed
 from collections import namedtuple
+import pickle
+from PIL import Image
+
+from lib import gui
+import warnings
 
 
 """ Constants """
@@ -19,29 +24,59 @@ Dragon = namedtuple('Dragon', ['suit'])
 Number = namedtuple('Number', ['suit', 'value'])
 
 
-def card_to_str(card):
-    """ Prints the string representation of the card. """
-    if isinstance(card, Flower):
-        return 'F  '
-    if isinstance(card, Dragon):
-        return 'D' + card.suit + ' '
-    if isinstance(card, Number):
-        return 'N' + card.suit + str(card.value)
-    raise TypeError
+class Deck:
+    """ Class for a deck of cards """
+    card_images = {}
 
+    @staticmethod
+    def create_card_image_map(board_image, board):
+        card_images = {}
+        for card, x, y in board.card_coordinates():
+            im = board_image.crop((x, y, x + 20, y + 20))
+            card_images[card] = {'data': im.tobytes(), 'size': im.size, 'mode': im.mode}
+        if len(card_images) < 31:
+            warnings.warn('Incomplete map, only {} out of 31 cards found.'.format(len(card_images)))
+        return pickle.dumps(card_images)
 
-def card_from_string(string):
-    """ Return the card that is represented by the string.
-        Raises KeyError if the string doesn't match a card
-    """
-    card, suit, value = string
-    if card == 'F':
-        return Flower()
-    if card == 'D':
-        return Dragon(suit)
-    if card == 'N':
-        return Number(suit, int(value))
-    raise ValueError
+    @staticmethod
+    def load_card_image_map(fn):
+        """ Load the card images from the pickle file. """
+        with open(fn, 'rb') as file:
+            Deck.card_images = pickle.load(file)
+        for card, im in Deck.card_images.items():
+            Deck.card_images[card] = Image.frombytes(im['mode'], im['size'], im['data'])
+
+    @staticmethod
+    def card_to_str(card):
+        """ Prints the string representation of the card. """
+        if isinstance(card, Flower):
+            return 'F  '
+        if isinstance(card, Dragon):
+            return 'D' + card.suit + ' '
+        if isinstance(card, Number):
+            return 'N' + card.suit + str(card.value)
+        raise TypeError
+
+    @staticmethod
+    def card_from_string(string):
+        """ Return the card that is represented by the string.
+            Raises KeyError if the string doesn't match a card
+        """
+        card, suit, value = string
+        if card == 'F':
+            return Flower()
+        if card == 'D':
+            return Dragon(suit)
+        if card == 'N':
+            return Number(suit, int(value))
+        raise LookupError
+
+    @staticmethod
+    def card_from_image(image):
+        for card, card_image in Deck.card_images.items():
+            if gui.correlation(image, card_image) > 0.99:
+                return card
+        raise LookupError
 
 
 # Space classes
@@ -80,19 +115,27 @@ class Space:
 
 
 class FlowerSpace(Space):
-    pass
+    @staticmethod
+    def xy():
+        return 738, 45
 
 
 class Goal(Space):
-    pass
+    @staticmethod
+    def xy(col):
+        return col*152 + 930, 45
 
 
 class Free(Space):
-    pass
+    @staticmethod
+    def xy(col):
+        return col*152 + 170, 45
 
 
 class Main(Space):
-    pass
+    @staticmethod
+    def xy(row, col):
+        return col*152 + 170, row * 31 + 309
 
 
 # Board Class
@@ -286,21 +329,21 @@ class Board:
         # Free spaces, if there is a stack of cards, show the number stacked
         for free in self.free:
             try:
-                s += '[' + card_to_str(free.cards[-1])
+                s += '[' + Deck.card_to_str(free.cards[-1])
                 s += ']' if len(free.cards) == 1 else str(len(free.cards))
             except IndexError:
                 s += '[   ]'
 
         # Flower space
         try:
-            s += '  [' + card_to_str(self.flower.cards[-1]) + ']   '
+            s += '  [' + Deck.card_to_str(self.flower.cards[-1]) + ']   '
         except IndexError:
             s += '  [   ]   '
 
         # Goal spaces
         for goal in self.goal:
             try:
-                s += '[' + card_to_str(goal.cards[-1]) + ']'
+                s += '[' + Deck.card_to_str(goal.cards[-1]) + ']'
             except IndexError:
                 s += '[   ]'
         s += '\n'
@@ -312,7 +355,7 @@ class Board:
             empty = True
             for main in self.main:
                 try:
-                    s += '[' + card_to_str(main.cards[row]) + ']'
+                    s += '[' + Deck.card_to_str(main.cards[row]) + ']'
                 except IndexError:
                     s += '     '
                 else:
@@ -333,13 +376,13 @@ class Board:
             space = Free()
             try:
                 index = i * 5 + 1
-                card = card_from_string(s[0][index:index+3])
+                card = Deck.card_from_string(s[0][index:index+3])
                 try:
                     count = int(s[0][index+3])
                 except ValueError:
                     count = 1
                 space.extend([card] * count)
-            except ValueError:
+            except (LookupError, ValueError):
                 pass
             self.free.append(space)
 
@@ -347,8 +390,8 @@ class Board:
         self.flower = FlowerSpace()
         try:
             index = i * 5 + 8
-            self.flower.append(card_from_string(s[0][index:index+3]))
-        except ValueError:
+            self.flower.append(Deck.card_from_string(s[0][index:index+3]))
+        except (LookupError, ValueError):
             pass
 
         # Load the goal cards. Generate the full stack down to the 1 card if it is a number
@@ -357,13 +400,13 @@ class Board:
             space = Goal()
             try:
                 index = len(SUITS) * 5 + i * 5 + 11
-                card = card_from_string(s[0][index:index+3])
+                card = Deck.card_from_string(s[0][index:index+3])
                 if isinstance(card, Number):
                     for value in range(1, card.value+1):
                         space.append(Number(card.suit, value))
                 else:
                     space.append(card)
-            except ValueError:
+            except (LookupError, ValueError):
                 pass
             self.goal.append(space)
 
@@ -375,25 +418,72 @@ class Board:
                 row = 1
                 while True:
                     index = i * 5 + 1
-                    card = card_from_string(s[row][index:index+3])
+                    card = Deck.card_from_string(s[row][index:index+3])
                     space.append(card)
                     row += 1
-            except (ValueError, IndexError):
+            except (LookupError, ValueError, IndexError):
+                pass
+            self.main.append(space)
+
+    def from_image(self, board_image):
+        """ Loads the board from an image of the board """
+        if not Deck.card_images:
+            raise LookupError('Deck does not have a card map.')
+
+        # Load the free space cards.
+        self.free = []
+        for col in range(len(SUITS)):
+            space = Free()
+            x, y = space.xy(col)
+            try:
+                space.append(Deck.card_from_image(board_image.crop((x, y, x + 20, y + 20))))
+            except LookupError:
+                pass
+            self.free.append(space)
+
+        # Load the flower space card
+        self.flower = FlowerSpace()
+        try:
+            x, y = self.flower.xy()
+            self.flower.append(Deck.card_from_image(board_image.crop((x, y, x + 20, y + 20))))
+        except LookupError:
+            pass
+
+        # Load the goal cards.
+        self.goal = []
+        for col in range(len(SUITS)):
+            space = Goal()
+            x, y = space.xy(col)
+            try:
+                space.append(Deck.card_from_image(board_image.crop((x, y, x + 20, y + 20))))
+            except LookupError:
+                pass
+            self.goal.append(space)
+
+        # Load the Main space cards
+        self.main = []
+        for col in range(COLUMNS):
+            space = Main()
+            try:
+                row = 0
+                while True:
+                    x, y = space.xy(row, col)
+                    space.append(Deck.card_from_image(board_image.crop((x, y, x + 20, y + 20))))
+                    row += 1
+            except (LookupError, IndexError):
                 pass
             self.main.append(space)
 
     def card_coordinates(self):
         """ Generator that yields all visible cards in the board along with their screen coordinate offsets. """
         # Free spaces
-        for i, free in enumerate(self.free):
+        for col, free in enumerate(self.free):
             try:
                 card = free.cards[-1]
             except IndexError:
                 pass
             else:
-                x = i*152 + 170
-                y = 45
-                yield card, x, y
+                yield (card, *free.xy(col))
 
         # Flower space
         try:
@@ -401,23 +491,19 @@ class Board:
         except IndexError:
             pass
         else:
-            x = 738
-            y = 45
-            yield card, x, y
+            yield (card, *self.flower.xy())
 
         # Goal spaces
-        for i, goal in enumerate(self.goal):
+        for col, goal in enumerate(self.goal):
             try:
                 card = goal.cards[-1]
             except IndexError:
                 pass
             else:
-                x = i*152 + 930
-                y = 45
-                yield card, x, y
+                yield (card, *goal.xy(col))
 
         # Main spaces
-        for i, main in enumerate(self.main):
+        for col, main in enumerate(self.main):
             row = 0
             while True:
                 try:
@@ -425,9 +511,7 @@ class Board:
                 except IndexError:
                     break
                 else:
-                    x = i * 152 + 170
-                    y = row*31 + 309
-                    yield card, x, y
+                    yield (card, *main.xy(row, col))
                 row += 1
 
     def key(self):

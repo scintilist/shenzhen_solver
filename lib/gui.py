@@ -28,3 +28,21 @@ def get_live_board_image():
 
     image = pyautogui.screenshot()
     return image.crop((xp, yp, xp + width, yp + height))
+
+
+def correlation(im1, im2):
+    """ Calculate the correlation between the 2 PIL images
+        The correlation is 1 - normalized pixel rms error
+        A white image and black image have a correlation of 0, and identical images have a correlation of 1
+    """
+    if im1.size != im2.size or im1.mode != im2.mode:
+        raise ValueError('Images are different sizes.')
+
+    square_error_sum = 0
+    im1_data = im1.tobytes()
+    im2_data = im2.tobytes()
+    for i in range(len(im1_data)):
+        square_error_sum += (im1_data[i] - im2_data[i])**2
+    mean_square_error = square_error_sum / len(im1_data)
+    rms_norm = mean_square_error ** 0.5 / 255
+    return 1 - rms_norm
