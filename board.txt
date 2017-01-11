@@ -1,0 +1,6 @@
+[   ][   ][   ]  [F  ]   [   ][   ][   ]
+[NG1][DG ][NR8][NR3][NB3][DB ][DB ][DR ]
+[NB2][DB ][NG2][NB1][NB7][DG ][NB9][NG3]
+[DB ][NR9][NB4][NG7][NR5][DR ][NR1][NG5]
+[NG6][DR ][NB8][DG ][NR7][NG9][NR4][DG ]
+[NB6][DR ][NR2][NG8][NG4]     [NR6][NB5]

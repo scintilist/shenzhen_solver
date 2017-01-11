@@ -382,6 +382,54 @@ class Board:
                 pass
             self.main.append(space)
 
+    def card_coordinates(self):
+        """ Generator that yields all visible cards in the board along with their screen coordinate offsets. """
+        # Free spaces
+        for i, free in enumerate(self.free):
+            try:
+                card = free.cards[-1]
+            except IndexError:
+                pass
+            else:
+                x = i*152 + 170
+                y = 45
+                yield card, x, y
+
+        # Flower space
+        try:
+            card = self.flower.cards[-1]
+        except IndexError:
+            pass
+        else:
+            x = 738
+            y = 45
+            yield card, x, y
+
+        # Goal spaces
+        for i, goal in enumerate(self.goal):
+            try:
+                card = goal.cards[-1]
+            except IndexError:
+                pass
+            else:
+                x = i*152 + 930
+                y = 45
+                yield card, x, y
+
+        # Main spaces
+        for i, main in enumerate(self.main):
+            row = 0
+            while True:
+                try:
+                    card = main.cards[row]
+                except IndexError:
+                    break
+                else:
+                    x = i * 152 + 170
+                    y = row*31 + 309
+                    yield card, x, y
+                row += 1
+
     def key(self):
         return (frozenset(self.main),) + (frozenset(self.free),) + tuple(self.goal) + (self.flower,)
 
@@ -497,18 +545,18 @@ class Tests(unittest.TestCase):
 
 if __name__ == '__main__':
     solver = Solver()
-    #solver.timeout = 2
+    #lib.timeout = 2
     board = Board()
 
     if False:
         seed(47)
         board.randomize()
-        cProfile.run('solver.solve(board)')
+        cProfile.run('lib.solve(board)')
         exit()
 
     longest = 0
     longest_seed = 0
-    for i in [1,2,3]:
+    for i in [1, 2, 3]:
         seed(i)
         board.randomize()
         #print(board)
