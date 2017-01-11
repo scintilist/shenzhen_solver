@@ -13,13 +13,14 @@ DRAGONS = 4              # Size of each set of dragons
 SUITS = ['R', 'G', 'B']  # Suit iterable
 VALUES = range(1, 10)    # Value iterable
 
-# Card classes
+# Card classes, uses named tuples to be fast and lightweight
 Flower = namedtuple('Flower', [])
 Dragon = namedtuple('Dragon', ['suit'])
 Number = namedtuple('Number', ['suit', 'value'])
 
 
-def card_str(card):
+def card_to_str(card):
+    """ Prints the string representation of the card. """
     if isinstance(card, Flower):
         return 'F  '
     if isinstance(card, Dragon):
@@ -27,6 +28,20 @@ def card_str(card):
     if isinstance(card, Number):
         return 'N' + card.suit + str(card.value)
     raise TypeError
+
+
+def card_from_string(string):
+    """ Return the card that is represented by the string.
+        Raises KeyError if the string doesn't match a card
+    """
+    card, suit, value = string
+    if card == 'F':
+        return Flower()
+    if card == 'D':
+        return Dragon(suit)
+    if card == 'N':
+        return Number(suit, int(value))
+    raise ValueError
 
 
 # Space classes
@@ -83,21 +98,21 @@ class Main(Space):
 # Board Class
 class Board:
     def __init__(self, board=None):
-        """ Create the empty board, or copy the board """
+        """ Create the empty board, or copy the board. """
         if board:
             # Cards are only moved, never modified, so it is ok to copy card references, and not duplicate cards
             self.main = [Main(space) for space in board.main]
-            self.free = [Main(space) for space in board.free]
-            self.goal = {suit: Goal(space) for suit, space in board.goal.items()}
+            self.free = [Free(space) for space in board.free]
+            self.goal = [Goal(space) for space in board.goal]
             self.flower = FlowerSpace(board.flower)
         else:
             self.main = [Main() for _ in range(COLUMNS)]
             self.free = [Free() for _ in range(len(SUITS))]
-            self.goal = {suit: Goal() for suit in SUITS}
+            self.goal = [Goal() for _ in range(len(SUITS))]
             self.flower = FlowerSpace()
 
     def randomize(self):
-        """ Create a random board """
+        """ Create a random board. """
         # Make a deck of cards
         deck = []
         for suit in SUITS:
@@ -107,7 +122,7 @@ class Board:
                 deck.append(Dragon(suit))
         deck.append(Flower())
 
-        # Shuffle lay out the 8 columns of 5 cards each
+        # Shuffle and lay out the 8 columns of 5 cards each
         shuffle(deck)
         self.main = []
         for cards in zip(*[iter(deck)] * ROWS):
@@ -117,11 +132,11 @@ class Board:
 
         # Create the free spaces, goal spaces, and flower space
         self.free = [Free() for _ in range(len(SUITS))]
-        self.goal = {suit: Goal() for suit in SUITS}
+        self.goal = [Goal() for _ in range(len(SUITS))]
         self.flower = FlowerSpace()
 
     def next(self):
-        """ generator that yields all possible boards which can be reached with a valid move from the current board """
+        """ Generator that yields all possible boards which can be reached with a valid move from the current board. """
         # Main space moves
         for src_i, src in enumerate(self.main):
             # Card stack moves to other main spaces
@@ -129,8 +144,8 @@ class Board:
                 # Break when the stack becomes unmovable
                 if height > 1:
                     if not (isinstance(src.cards[-height+1], Number) and isinstance(src.cards[-height], Number) and
-                            src.cards[-height+1].value == src.cards[-height].value - 1 and
-                            src.cards[-height+1].suit != src.cards[-height].suit):
+                            src.cards[-height+1].suit != src.cards[-height].suit and
+                            src.cards[-height+1].value == src.cards[-height].value - 1):
                         break
 
                 moved_to_empty = False  # Flag set when moved to an empty stack
@@ -144,26 +159,23 @@ class Board:
                         continue
 
                     if dst.cards:
-                        # If it can be stacked on
-                        if (isinstance(src.cards[-height], Number) and isinstance(dst.cards[-1], Number) and
-                                src.cards[-height].value == dst.cards[-1].value - 1 and
-                                src.cards[-height].suit != dst.cards[-1].suit):
-                            # Copy, move, and yield
-                            new_board = Board(self)
-                            new_board.main[dst_i].extend(new_board.main[src_i].cards[-height:])
-                            new_board.main[src_i].cards = new_board.main[src_i].cards[:-height]
-                            new_board.main[src_i].update()
-                            yield new_board
-
-                    elif not moved_to_empty:
-                        # If the destination is empty
-                        moved_to_empty = True
-                        # Copy, move, and yield
-                        new_board = Board(self)
-                        new_board.main[dst_i].extend(new_board.main[src_i].cards[-height:])
-                        new_board.main[src_i].cards = new_board.main[src_i].cards[:-height]
-                        new_board.main[src_i].update()
-                        yield new_board
+                        # If it can't be stacked on
+                        if not (isinstance(src.cards[-height], Number) and isinstance(dst.cards[-1], Number) and
+                                src.cards[-height].suit != dst.cards[-1].suit and
+                                src.cards[-height].value == dst.cards[-1].value - 1):
+                            continue
+                    else:
+                        # If the destination is empty, but an empty move has already been done
+                        if moved_to_empty:
+                            continue
+                        else:
+                            moved_to_empty = True
+                    # Copy, move, and yield
+                    new_board = Board(self)
+                    new_board.main[dst_i].extend(new_board.main[src_i].cards[-height:])
+                    new_board.main[src_i].cards = new_board.main[src_i].cards[:-height]
+                    new_board.main[src_i].update()
+                    yield new_board
 
             # Single card moves
             if src.cards:
@@ -177,14 +189,21 @@ class Board:
                         break
 
                 # To goal spaces
-                if isinstance(src.cards[-1], Number) and (
-                        (self.goal[src.cards[-1].suit].cards and src.cards[-1].value == self.goal[src.cards[-1].suit].cards[-1].value + 1) or
-                        (not self.goal[src.cards[-1].suit].cards and src.cards[-1].value == VALUES[0])):
-                    # Copy, move, and yield
-                    new_board = Board(self)
-                    new_board.goal[src.cards[-1].suit].append(new_board.main[src_i].pop())
-                    yield new_board
-                    break
+                if isinstance(src.cards[-1], Number):
+                    for dst_i, dst in enumerate(self.goal):
+                        if src.cards[-1].value == VALUES[0]:
+                            if dst.cards:
+                                continue
+                        else:
+                            if not (dst.cards and
+                                    src.cards[-1].suit == dst.cards[-1].suit and
+                                    src.cards[-1].value == dst.cards[-1].value + 1):
+                                continue
+                        # Copy, move, and yield
+                        new_board = Board(self)
+                        new_board.goal[dst_i].append(new_board.main[src_i].pop())
+                        yield new_board
+                        break
 
                 # To flower space
                 if isinstance(src.cards[-1], Flower):
@@ -197,35 +216,41 @@ class Board:
         for src_i, src in enumerate(self.free):
             if len(src.cards) == 1:
                 # To goal spaces
-                if isinstance(src.cards[-1], Number) and (
-                        (self.goal[src.cards[-1].suit].cards and src.cards[-1].value == self.goal[src.cards[-1].suit].cards[-1].value + 1) or
-                        (not self.goal[src.cards[-1].suit].cards and src.cards[-1].value == VALUES[0])):
-                    # Copy, move, and yield
-                    new_board = Board(self)
-                    new_board.goal[src.cards[-1].suit].append(new_board.free[src_i].pop())
-                    yield new_board
-                    break
+                if isinstance(src.cards[-1], Number):
+                    for dst_i, dst in enumerate(self.goal):
+                        if src.cards[-1].value == VALUES[0]:
+                            if dst.cards:
+                                continue
+                        else:
+                            if not (dst.cards and
+                                    src.cards[-1].suit == dst.cards[-1].suit and
+                                    src.cards[-1].value == dst.cards[-1].value + 1):
+                                continue
+                        # Copy, move, and yield
+                        new_board = Board(self)
+                        new_board.goal[dst_i].append(new_board.free[src_i].pop())
+                        yield new_board
+                        break
 
                 # Move to each main area space
                 moved_to_empty = False  # Flag set when moved to an empty stack
                 for dst_i, dst in enumerate(self.main):
                     if dst.cards:
-                        # If it can be stacked on
-                        if (isinstance(src.cards[-1], Number) and  isinstance(dst.cards[-1], Number) and
+                        # If it can't be stacked on
+                        if not (isinstance(src.cards[-1], Number) and  isinstance(dst.cards[-1], Number) and
                                 src.cards[-1].value == dst.cards[-1].value - 1 and
                                 src.cards[-1].suit != dst.cards[-1].suit):
-                            # Copy, move, and yield
-                            new_board = Board(self)
-                            new_board.main[dst_i].append(new_board.free[src_i].pop())
-                            yield new_board
-
-                    elif not moved_to_empty:
-                        # If the destination is empty
-                        moved_to_empty = True
-                        # Copy, move, and yield
-                        new_board = Board(self)
-                        new_board.main[dst_i].append(new_board.free[src_i].pop())
-                        yield new_board
+                            continue
+                    else:
+                        # If the destination is empty, but an empty move has already been done
+                        if moved_to_empty:
+                            continue
+                        else:
+                            moved_to_empty = True
+                    # Copy, move, and yield
+                    new_board = Board(self)
+                    new_board.main[dst_i].append(new_board.free[src_i].pop())
+                    yield new_board
 
                 # If dragon, try to 'collect' dragons
                 if isinstance(src.cards[-1], Dragon):
@@ -256,30 +281,38 @@ class Board:
         return not any(main.cards for main in self.main)
 
     def __str__(self):
-        """ String representation of the board """
+        """ String representation of the board. """
         s = ''
+        # Free spaces, if there is a stack of cards, show the number stacked
         for free in self.free:
             try:
-                s += '[' + card_str(free.cards[-1]) + ']'
+                s += '[' + card_to_str(free.cards[-1])
+                s += ']' if len(free.cards) == 1 else str(len(free.cards))
             except IndexError:
                 s += '[   ]'
+
+        # Flower space
         try:
-            s += '  [' + card_str(self.flower.cards[-1]) + ']   '
+            s += '  [' + card_to_str(self.flower.cards[-1]) + ']   '
         except IndexError:
             s += '  [   ]   '
-        for goal in self.goal.values():
+
+        # Goal spaces
+        for goal in self.goal:
             try:
-                s += '[' + card_str(goal.cards[-1]) + ']'
+                s += '[' + card_to_str(goal.cards[-1]) + ']'
             except IndexError:
                 s += '[   ]'
         s += '\n'
+
+        # Main spaces
         empty = False
         row = 0
         while not empty:
             empty = True
             for main in self.main:
                 try:
-                    s += '[' + card_str(main.cards[row]) + ']'
+                    s += '[' + card_to_str(main.cards[row]) + ']'
                 except IndexError:
                     s += '     '
                 else:
@@ -287,6 +320,67 @@ class Board:
             row += 1
             s += '\n'
         return s
+
+    def from_string(self, string):
+        """ Loads the board from a string representation. """
+        # Break the string by lines so it can be indexed by x/y coordinates.
+        s = string.split('\n')
+
+        # Load the free space cards.
+        # If there is a stack of cards, the following character is the stack height
+        self.free = []
+        for i in range(len(SUITS)):
+            space = Free()
+            try:
+                index = i * 5 + 1
+                card = card_from_string(s[0][index:index+3])
+                try:
+                    count = int(s[0][index+3])
+                except ValueError:
+                    count = 1
+                space.extend([card] * count)
+            except ValueError:
+                pass
+            self.free.append(space)
+
+        # Load the flower space card
+        self.flower = FlowerSpace()
+        try:
+            index = i * 5 + 8
+            self.flower.append(card_from_string(s[0][index:index+3]))
+        except ValueError:
+            pass
+
+        # Load the goal cards. Generate the full stack down to the 1 card if it is a number
+        self.goal = []
+        for i in range(len(SUITS)):
+            space = Goal()
+            try:
+                index = len(SUITS) * 5 + i * 5 + 11
+                card = card_from_string(s[0][index:index+3])
+                if isinstance(card, Number):
+                    for value in range(1, card.value+1):
+                        space.append(Number(card.suit, value))
+                else:
+                    space.append(card)
+            except ValueError:
+                pass
+            self.goal.append(space)
+
+        # Load the Main space cards
+        self.main = []
+        for i in range(COLUMNS):
+            space = Main()
+            try:
+                row = 1
+                while True:
+                    index = i * 5 + 1
+                    card = card_from_string(s[row][index:index+3])
+                    space.append(card)
+                    row += 1
+            except (ValueError, IndexError):
+                pass
+            self.main.append(space)
 
     def key(self):
         return (frozenset(self.main),) + (frozenset(self.free),) + tuple(self.goal) + (self.flower,)
@@ -301,16 +395,16 @@ class Board:
 class Solver:
     def __init__(self):
         self.board_list = []
+        self.board_cache = {}
         self.count = 0
         self.timeout = 0
 
     def solve(self, board):
-        """ Solve the puzzle using backtracking """
+        """ Solve the puzzle using backtracking. """
         board.next_board = board.next()
-
-        self.count = 0
         self.board_list = [board]
         self.board_cache = {board}
+        self.count = 0
 
         start_time = perf_counter()
         while not board.is_solved():
@@ -336,10 +430,6 @@ class Solver:
                 if perf_counter() - start_time > self.timeout:
                     return 'timed out'
         return 'solved'
-
-        #print(i)
-        #for b in board_list:
-        #    print(b.board)
 
 
 class Tests(unittest.TestCase):
@@ -392,6 +482,18 @@ class Tests(unittest.TestCase):
         b.main[4].cards.append(Flower())
         self.assertFalse(b.is_solved())
 
+    def test_string_methods(self):
+        """ Test that the board can be parsed to a string and back. """
+        b = Board()
+        b.randomize()
+        b.free[0].append(b.main[2].pop())
+        b.free[1].extend([Dragon(SUITS[0])]*4)
+        for i in range(1, 7):
+            b.goal[1].append(Number(SUITS[1], i))
+        b.flower.append(b.main[4].pop())
+        b2 = Board()
+        b2.from_string(str(b))
+        self.assertEqual(b, b2)
 
 if __name__ == '__main__':
     solver = Solver()
@@ -406,7 +508,7 @@ if __name__ == '__main__':
 
     longest = 0
     longest_seed = 0
-    for i in range(1000):
+    for i in [1,2,3]:
         seed(i)
         board.randomize()
         #print(board)
