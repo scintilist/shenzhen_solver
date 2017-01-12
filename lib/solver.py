@@ -506,6 +506,24 @@ class Board:
                 pass
             self.main.append(space)
 
+        # Replace dragon stack placeholder cards in the free spaces with the stacks of dragons
+        for suit in SUITS:
+            # Count visble dragons of the suit (only need to check the main area and free spaces
+            count = 0
+            for space in self.main + self.free:
+                for card in space.cards:
+                    if isinstance(card, Dragon) and card.suit == suit:
+                        count += 1
+
+            # If there are missing dragons, replace the first suitless free space dragon with them
+            if count < DRAGONS:
+                for col, space in enumerate(self.free):
+                    if space.cards and isinstance(space.cards[-1], Dragon) and space.cards[-1].suit not in SUITS:
+                        self.free[col] = Free()
+                        for i in range(DRAGONS):
+                            self.free[col].append(Dragon(suit))
+                        break
+
     def card_coordinates(self):
         """ Generator that yields all visible cards in the board along with their screen coordinate offsets. """
         # Free spaces
