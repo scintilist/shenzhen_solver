@@ -1,9 +1,9 @@
 """ This script solves the Shenzhen solitare game in real time, using pyautogui to move the mouse and click """
 
 import pyautogui
-from time import perf_counter
+from time import perf_counter, sleep
 
-from lib.solver import Solver, Board, Deck
+from lib.solver import Solver, Board, Deck, Move
 from lib import gui
 
 if __name__ == '__main__':
@@ -15,6 +15,7 @@ if __name__ == '__main__':
     w = gui.get_window()
     if not w:
         raise LookupError('Shenzhen I/O window not found')
+    sleep(0.5)
     board_image = gui.get_live_board_image(w)
 
 
@@ -30,17 +31,22 @@ if __name__ == '__main__':
     solved = solver.solve(board)
     duration = perf_counter() - start
     print('Board {} in {:.3f} seconds after {} boards tested'.format(solved, duration, solver.count))
+    print('Solution takes {} moves.'.format(len(solver.board_list)))
 
     ''' Execute the solution using pyautogui '''
-    # TODO
+    # Print all the moves
+    for i, move in enumerate(solver.moves()):
+        print(solver.board_list[i])
+        print(move)
+    print(solver.board_list[i+1])
+
     # click the window to make it active
     x, y = gui.get_window_xy(w)
     pyautogui.moveTo(x+1, y+1, duration=0.5)
     pyautogui.click()
 
-    for move in solver.list_moves():
-        start, end = move
-        x, y = gui.get_window_xy(w)
-        pyautogui.moveTo(start[0]+x, start[1]+y, duration=0.5)
-        pyautogui.dragTo(end[0]+x, end[1]+y, button='left', duration=0.5)
-        print('({}, {}) to ({}, {})'.format(*move[0], *move[1]))
+    Move.window = w
+    Move.verify = False
+    for move in solver.moves():
+        print('Attempting: ' + str(move))
+        move.exec()

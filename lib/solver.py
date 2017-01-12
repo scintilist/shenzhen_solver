@@ -1,11 +1,14 @@
 import unittest
-from time import perf_counter
 import cProfile
+
+from time import perf_counter, sleep
+from functools import reduce
 
 from random import shuffle, seed
 from collections import namedtuple
 import pickle
 from PIL import Image, ImageDraw, ImageFont
+import pyautogui
 
 from lib import gui
 import warnings
@@ -161,7 +164,82 @@ class Main(Space):
         return col*152 + 170, row * 31 + 309
 
 
-# Board Class
+# Move classes
+def vector_sum(*args):
+    return (*map(sum, zip(*args)),)
+
+
+class Move:
+    window = None
+    verify = False  # Set True to verify the card and mouse posistion before executing each drag
+
+    @staticmethod
+    def relative(point):
+        x, y, width, height = Move.window.get_client_window_geometry()
+        return vector_sum((x, y), point)
+
+
+class Drag(Move):
+    card_offset = (50, 10)  # Offset from the card image position to the card mouse click position
+
+    def __init__(self, start, end, card):
+        self.start = start
+        self.end = end
+        self.card = card
+
+    def exec(self):
+        # Move the start
+        start = Move.relative(vector_sum(self.start, Drag.card_offset))
+        pyautogui.moveTo(*start, duration=0.2)
+
+        if Move.verify:
+            # Verify the card
+            xp, yp, width, height = Move.window.get_client_window_geometry()
+            image = pyautogui.screenshot()
+            card_image = image.crop((*vector_sum(self.start, (xp, yp)), *vector_sum(self.start, (xp, yp), (20, 20))))
+            try:
+                card = Deck.card_from_image(card_image)
+                if self.card != card:
+                    raise LookupError
+            except LookupError:
+                raise RuntimeError('Drag move source card does not match the expected card image.')
+
+            # Verify the mouse position
+            if pyautogui.position() != start:
+                raise RuntimeError('Mouse not in expected position')
+
+        # Drag the card
+        pyautogui.dragTo(*Move.relative(vector_sum(self.end, Drag.card_offset)), duration=0.2)
+
+    def __str__(self):
+        return 'Drag {} from {} to {}'.format(self.card, self.start, self.end)
+
+
+class Click(Move):
+    def __init__(self, point):
+        self.point = point
+
+    def exec(self):
+        pyautogui.moveTo(*Move.relative(self.point), duration=0.5)
+        pyautogui.mouseDown()
+        pyautogui.mouseUp()
+
+    def __str__(self):
+        return 'Click at {}'.format(self.point)
+
+
+class Pause(Move):
+    def __init__(self, duration):
+        self.duration = duration
+
+    def exec(self):
+        sleep(self.duration)
+
+    def __str__(self):
+        return 'Pause for {} seconds'.format(self.duration)
+
+
+# Board class
 class Board:
     def __init__(self, board=None):
         """ Create the empty board, or copy the board. """
@@ -204,6 +282,56 @@ class Board:
 
     def next(self):
         """ Generator that yields all possible boards which can be reached with a valid move from the current board. """
+        # Special automatic moves first (no mouse move)
+        # Main space moves
+        for src_i, src in enumerate(self.main):
+            # Single card moves
+            if src.cards:
+                # To flower space
+                if isinstance(src.cards[-1], Flower):
+                    # Copy, move, and yield
+                    new_board = Board(self)
+                    new_board.flower.append(new_board.main[src_i].pop())
+                    yield new_board
+                    return
+
+                # To goal spaces
+                if isinstance(src.cards[-1], Number):
+                    min_goal_value = reduce(lambda m, dst: min(m, dst.cards[-1].value) if dst.cards else 1, self.goal, 9)
+                    for dst_i, dst in enumerate(self.goal):
+                        # if the goal space is empty, or the card is less than 2 greater than the lowest goal value
+                        if ((src.cards[-1].value == VALUES[0] and not dst.cards) or (
+                                dst.cards and
+                                src.cards[-1].suit == dst.cards[-1].suit and
+                                src.cards[-1].value == dst.cards[-1].value + 1 and
+                                src.cards[-1].value <= min_goal_value + 1
+                                )):
+                            # Copy, move, and yield
+                            new_board = Board(self)
+                            new_board.goal[dst_i].append(new_board.main[src_i].pop())
+                            yield new_board
+                            return
+
+        # Free space moves
+        for src_i, src in enumerate(self.free):
+            # To goal spaces
+            if src.cards and isinstance(src.cards[-1], Number):
+                min_goal_value = reduce(lambda m, dst: min(m, dst.cards[-1].value) if dst.cards else 1, self.goal, 9)
+                for dst_i, dst in enumerate(self.goal):
+                    # if the goal space is empty, or the card is less than 2 greater than the lowest goal value
+                    if ((src.cards[-1].value == VALUES[0] and not dst.cards) or (
+                            dst.cards and
+                            src.cards[-1].suit == dst.cards[-1].suit and
+                            src.cards[-1].value == dst.cards[-1].value + 1 and
+                            src.cards[-1].value <= min_goal_value + 1
+                            )):
+                        # Copy, move, and yield
+                        new_board = Board(self)
+                        new_board.goal[dst_i].append(new_board.free[src_i].pop())
+                        yield new_board
+                        return
+
+        # Then regular moves
         # Main space moves
         for src_i, src in enumerate(self.main):
             # Card stack moves to other main spaces
@@ -260,28 +388,15 @@ class Board:
                 # To goal spaces
                 if isinstance(src.cards[-1], Number):
                     for dst_i, dst in enumerate(self.goal):
-                        if src.cards[-1].value == VALUES[0]:
-                            if dst.cards:
-                                continue
-                        else:
-                            if not (dst.cards and
-                                    src.cards[-1].suit == dst.cards[-1].suit and
-                                    src.cards[-1].value == dst.cards[-1].value + 1):
-                                continue
-                        # Copy, move, and yield
-                        new_board = Board(self)
-                        new_board.goal[dst_i].append(new_board.main[src_i].pop())
-                        new_board.move = new_board.goal[dst_i].cards[-1]
-                        yield new_board
-                        break
-
-                # To flower space
-                if isinstance(src.cards[-1], Flower):
-                    # Copy, move, and yield
-                    new_board = Board(self)
-                    new_board.flower.append(new_board.main[src_i].pop())
-                    new_board.move = new_board.flower.cards[-1]
-                    yield new_board
+                        if (dst.cards and
+                                src.cards[-1].suit == dst.cards[-1].suit and
+                                src.cards[-1].value == dst.cards[-1].value + 1):
+                            # Copy, move, and yield
+                            new_board = Board(self)
+                            new_board.goal[dst_i].append(new_board.main[src_i].pop())
+                            new_board.move = new_board.goal[dst_i].cards[-1]
+                            yield new_board
+                            break
 
         # Free space moves
         for src_i, src in enumerate(self.free):
@@ -616,29 +731,30 @@ class Solver:
                     return 'timed out'
         return 'solved'
 
-    def list_moves(self):
-        moves = []
+    def moves(self):
+        """ Generator that yields all the moves from the start to the solution """
         for i, board in enumerate(self.board_list[1:]):
             start = None
             end = None
-            #print('move [{}] '.format(board.move), end='')
+
             for card, x, y in self.board_list[i].card_coordinates():
                 if board.move is card:
                     start = (x, y)
-                    #print('from ({},{}) '.format(x, y), end='')
 
             for card, x, y in board.card_coordinates():
                 if board.move is card:
                     end = (x, y)
-                    #print('to ({},{})'.format(x, y))
+
             if start and end:
-                if start == end:
-                    if isinstance(board.move, Dragon):
-                        start = end = dragon_button_xy[board.move.suit]
-                        moves.append((start, end))
+                if start == end and isinstance(board.move, Dragon):
+                    # Dragon move
+                    yield Click(dragon_button_xy[board.move.suit])
                 else:
-                    moves.append(((start[0]+50, start[1]+10), (end[0]+50, end[1]+10)))
-        return moves
+                    # Normal card move
+                    yield Drag(start, end, board.move)
+            else:
+                # No Move, pause
+                yield Pause(0.2)
 
 
 class Tests(unittest.TestCase):

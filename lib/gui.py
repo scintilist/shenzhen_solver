@@ -5,7 +5,7 @@ import time
 
 def get_window():
     """ Get the shenzhen solitare game window """
-    # Find the SHENZHEN I/O Window, bring it to the front, and take a screenshot
+    # Find the SHENZHEN I/O Window and bring it to the front
     Gtk.main_iteration()
     screen = Wnck.Screen.get_default()
     screen.force_update()
@@ -28,13 +28,7 @@ def get_window_xy(w):
 
 def get_live_board_image(w):
     """ Get an image of the shenzhen solitare game board """
-
     xp, yp, width, height = w.get_client_window_geometry()
-    print('Window at ({}px,{}px) and has dimensions {}px X {}px'.format(xp, yp, width, height))
-
-    # Delay to allow time for the window to make it to the front
-    time.sleep(.5)
-
     image = pyautogui.screenshot()
     return image.crop((xp, yp, xp + width, yp + height))
 
