@@ -1,37 +1,40 @@
 """ Run this script to map the card images to card values.
     To use:
     1) Run SHENZHEN I/O solitare in a window at 1440x900 resolution
-        (making sure all cards are within the screen boarders)
-    2) fill in and save the "board.txt" file with the cards as they appear in the current game
-    3) Run this script, which will match each card to it's image, and then save the resulting map in "card_images.p"
-
-    The script can also be modified to use an image from a file, instead of a live image.
+    2) Use the screenshot script to save screenshots of solitare boards
+    3) Save board text files and fill them in to match the board images, saving each with the same file name
+    4) Run this script, which will generate the card image map from
+       all pairs of board and image files in the 'card_image_data' folder
 """
 from PIL import Image
 
-from lib import solver
-from lib import gui
-
-# True to get a live image of the solitare board, False to use a saved image at the path BOARD_IMAGE_FN
-LIVE = False
-BOARD_IMAGE_FN = 'board_image.png'
+from lib.solver import Deck, Board
+import glob
+import os.path as path
 
 
 if __name__ == '__main__':
-    ''' Load board.txt '''
-    board = solver.Board()
-    with open('board.txt', 'r') as f:
-        board.from_string(f.read())
+    # Loop through all pairs of board text and image files
+    txt = {path.splitext(f)[0] for f in glob.glob('card_image_data/*.txt')}
+    png = {path.splitext(f)[0] for f in glob.glob('card_image_data/*.png')}
+    for fn in txt.intersection(png):
 
-    ''' Get the board image. '''
-    if LIVE:
-        board_image = gui.get_live_board_image(gui.get_window())
-    else:
-        board_image = Image.open(BOARD_IMAGE_FN)
+        # Load the board from text file
+        board = Board()
+        with open(fn + '.txt', 'r') as f:
+            board.from_string(f.read())
 
-    ''' Map cards to card images. '''
-    card_image_map = solver.Deck.create_card_image_map(board_image, board)
+        # Load the board image
+        board_image = Image.open(fn + '.png')
 
-    ''' Save the card image map. '''
-    with open('card_images.p', 'wb') as card_image_file:
-        card_image_file.write(card_image_map)
+        # Update the card image map
+        Deck.update_card_image_map(board_image, board)
+
+    # Save the card image map
+    Deck.save_card_image_map('card_image_data/card_images.p')
+
+    # Load the card image map
+    Deck.load_card_image_map('card_image_data/card_images.p')
+
+    # Show the card image map
+    Deck.show_card_image_map()

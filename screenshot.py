@@ -9,6 +9,6 @@ BOARD_IMAGE_FN = 'board_image.png'
 
 
 if __name__ == '__main__':
-    ''' Get the board image. ''':
+    ''' Get the board image. '''
     board_image = gui.get_live_board_image(gui.get_window())
     board_image.save(BOARD_IMAGE_FN)

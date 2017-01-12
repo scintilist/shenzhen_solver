@@ -9,7 +9,7 @@ from lib import gui
 if __name__ == '__main__':
     ''' Load the card image map into the deck '''
     deck = Deck()
-    deck.load_card_image_map('card_images.p')
+    deck.load_card_image_map('card_image_data/card_images.p')
 
     ''' Get the board image. '''
     w = gui.get_window()

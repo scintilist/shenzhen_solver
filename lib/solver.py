@@ -5,7 +5,7 @@ import cProfile
 from random import shuffle, seed
 from collections import namedtuple
 import pickle
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 
 from lib import gui
 import warnings
@@ -34,22 +34,38 @@ class Deck:
     card_images = {}
 
     @staticmethod
-    def create_card_image_map(board_image, board):
-        card_images = {}
+    def show_card_image_map():
+        im_map = Image.new('RGB', (220, len(Deck.card_images)*25), (0xA0, 0xA0, 0xA0))
+        draw = ImageDraw.Draw(im_map)
+        font = ImageFont.truetype('Ubuntu-B.ttf', size=14)
+        y = 0
+        for card, im in sorted(Deck.card_images.items()):
+            im_map.paste(im, (0, y, 20, y+20))
+            draw.text((25, y), str(card), (0, 0, 0), font)
+            y += 25
+        im_map.show()
+
+    @staticmethod
+    def update_card_image_map(board_image, board):
         for card, x, y in board.card_coordinates():
-            im = board_image.crop((x, y, x + 20, y + 20))
-            card_images[card] = {'data': im.tobytes(), 'size': im.size, 'mode': im.mode}
-        if len(card_images) < 31:
-            warnings.warn('Incomplete map, only {} out of 31 cards found.'.format(len(card_images)))
-        return pickle.dumps(card_images)
+            Deck.card_images[card] = board_image.crop((x, y, x + 20, y + 20))
+
+    @staticmethod
+    def save_card_image_map(fn):
+        """ Save the card images to a pickle file """
+        if len(Deck.card_images) < 32:
+            warnings.warn('Incomplete map, only {} out of 32 cards found.'.format(len(Deck.card_images)))
+
+        data = {card: {'mode': im.mode, 'size': im.size, 'data': im.tobytes()} for card, im in Deck.card_images.items()}
+        with open(fn, 'wb') as f:
+            f.write(pickle.dumps(data))
 
     @staticmethod
     def load_card_image_map(fn):
         """ Load the card images from the pickle file. """
         with open(fn, 'rb') as file:
-            Deck.card_images = pickle.load(file)
-        for card, im in Deck.card_images.items():
-            Deck.card_images[card] = Image.frombytes(im['mode'], im['size'], im['data'])
+            p_dict = pickle.load(file)
+        Deck.card_images = {card: Image.frombytes(im['mode'], im['size'], im['data']) for card, im in p_dict.items()}
 
     @staticmethod
     def card_to_str(card):
