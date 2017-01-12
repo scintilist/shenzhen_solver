@@ -25,28 +25,24 @@ if __name__ == '__main__':
 
     ''' Solve the board '''
     solver = Solver()
-    solver.timeout = 0
+    solver.timeout = 2
 
     start = perf_counter()
     solved = solver.solve(board)
     duration = perf_counter() - start
     print('Board {} in {:.3f} seconds after {} boards tested'.format(solved, duration, solver.count))
-    print('Solution takes {} moves.'.format(len(solver.board_list)))
 
-    ''' Execute the solution using pyautogui '''
-    # Print all the moves
-    for i, move in enumerate(solver.moves()):
-        print(solver.board_list[i])
-        print(move)
-    print(solver.board_list[i+1])
+    ''' Execute the solution  if it was solved '''
+    if solver.board_list and solver.board_list[-1].is_solved():
+        # Print all the moves
+        for i, move in enumerate(solver.moves()):
+            print(solver.board_list[i])
+            print(move)
+        print(solver.board_list[i+1])
+        print('Solution takes {} moves.'.format(len(solver.board_list)))
 
-    # click the window to make it active
-    x, y = gui.get_window_xy(w)
-    pyautogui.moveTo(x+1, y+1, duration=0.5)
-    pyautogui.click()
-
-    Move.window = w
-    Move.verify = False
-    for move in solver.moves():
-        print('Attempting: ' + str(move))
-        move.exec()
+        Move.window = w
+        Move.verify = False
+        for move in solver.moves():
+            print('Attempting: ' + str(move))
+            move.exec()

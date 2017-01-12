@@ -169,12 +169,20 @@ def vector_sum(*args):
     return (*map(sum, zip(*args)),)
 
 
+def distance(a, b):
+    return ((a[0]-b[0])**2 + (a[1]-b[1])**2)**0.5
+
+
 class Move:
     window = None
-    verify = False  # Set True to verify the card and mouse posistion before executing each drag
+    verify = False         # Set True to verify the card image before executing each drag
+    speed = 5000           # Mouse move speed in pixels/second (default=5000)
+    min_time = 0.1         # Minimum mouse move time in seconds (default=0.1)
+    sleep_duration = 0.0   # Time to sleep after each move (default=0.0)
+    pause_duration = 0.25  # Duration of a pause move in seconds (default=0.2)
 
     @staticmethod
-    def relative(point):
+    def absolute(point):
         x, y, width, height = Move.window.get_client_window_geometry()
         return vector_sum((x, y), point)
 
@@ -189,8 +197,9 @@ class Drag(Move):
 
     def exec(self):
         # Move the start
-        start = Move.relative(vector_sum(self.start, Drag.card_offset))
-        pyautogui.moveTo(*start, duration=0.2)
+        start = Move.absolute(vector_sum(self.start, Drag.card_offset))
+        pyautogui.moveTo(*start, duration=Move.min_time + distance(pyautogui.position(), start) / Move.speed)
+        sleep(Move.sleep_duration)
 
         if Move.verify:
             # Verify the card
@@ -204,12 +213,14 @@ class Drag(Move):
             except LookupError:
                 raise RuntimeError('Drag move source card does not match the expected card image.')
 
-            # Verify the mouse position
-            if pyautogui.position() != start:
-                raise RuntimeError('Mouse not in expected position')
+        # Verify the mouse position
+        if pyautogui.position() != start:
+            raise RuntimeError('Mouse not in expected position')
 
         # Drag the card
-        pyautogui.dragTo(*Move.relative(vector_sum(self.end, Drag.card_offset)), duration=0.2)
+        end = Move.absolute(vector_sum(self.end, Drag.card_offset))
+        pyautogui.dragTo(*end, duration=Move.min_time + distance(pyautogui.position(), end) / Move.speed)
+        sleep(Move.sleep_duration)
 
     def __str__(self):
         return 'Drag {} from {} to {}'.format(self.card, self.start, self.end)
@@ -220,23 +231,26 @@ class Click(Move):
         self.point = point
 
     def exec(self):
-        pyautogui.moveTo(*Move.relative(self.point), duration=0.5)
+        point = Move.absolute(self.point)
+        pyautogui.moveTo(*point, duration=Move.min_time + distance(pyautogui.position(), point) / Move.speed)
+        sleep(Move.sleep_duration)
         pyautogui.mouseDown()
         pyautogui.mouseUp()
+        sleep(Move.pause_duration)
 
     def __str__(self):
         return 'Click at {}'.format(self.point)
 
 
 class Pause(Move):
-    def __init__(self, duration):
-        self.duration = duration
+    def __init__(self):
+        pass
 
     def exec(self):
-        sleep(self.duration)
+        sleep(Move.pause_duration)
 
     def __str__(self):
-        return 'Pause for {} seconds'.format(self.duration)
+        return 'Pause for {} seconds'.format(Move.pause_duration)
 
 
 # Board class
@@ -754,7 +768,7 @@ class Solver:
                     yield Drag(start, end, board.move)
             else:
                 # No Move, pause
-                yield Pause(0.2)
+                yield Pause()
 
 
 class Tests(unittest.TestCase):
