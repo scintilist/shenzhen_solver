@@ -25,7 +25,7 @@ if __name__ == '__main__':
 
     ''' Get the board image. '''
     if LIVE:
-        board_image = gui.get_live_board_image()
+        board_image = gui.get_live_board_image(gui.get_window())
     else:
         board_image = Image.open(BOARD_IMAGE_FN)
 

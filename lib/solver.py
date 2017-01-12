@@ -10,6 +10,7 @@ from PIL import Image
 from lib import gui
 import warnings
 
+from copy import copy
 
 """ Constants """
 COLUMNS = 8              # Number of Columns in the main board
@@ -22,6 +23,10 @@ VALUES = range(1, 10)    # Value iterable
 Flower = namedtuple('Flower', [])
 Dragon = namedtuple('Dragon', ['suit'])
 Number = namedtuple('Number', ['suit', 'value'])
+
+
+# Dragon button coordinates
+dragon_button_xy = {'R': (648, 66), 'G': (648, 150), 'B': (648, 234)}
 
 
 class Deck:
@@ -73,9 +78,11 @@ class Deck:
 
     @staticmethod
     def card_from_image(image):
+        if not Deck.card_images:
+            raise LookupError('Deck does not have a card map.')
         for card, card_image in Deck.card_images.items():
             if gui.correlation(image, card_image) > 0.99:
-                return card
+                return copy(card)
         raise LookupError
 
 
@@ -153,6 +160,7 @@ class Board:
             self.free = [Free() for _ in range(len(SUITS))]
             self.goal = [Goal() for _ in range(len(SUITS))]
             self.flower = FlowerSpace()
+        self.move = None  # The card that is moved, if multiple cards, this is the bottom of the stack
 
     def randomize(self):
         """ Create a random board. """
@@ -218,6 +226,7 @@ class Board:
                     new_board.main[dst_i].extend(new_board.main[src_i].cards[-height:])
                     new_board.main[src_i].cards = new_board.main[src_i].cards[:-height]
                     new_board.main[src_i].update()
+                    new_board.move = new_board.main[dst_i].cards[-height]
                     yield new_board
 
             # Single card moves
@@ -228,6 +237,7 @@ class Board:
                         # Copy, move, and yield
                         new_board = Board(self)
                         new_board.free[dst_i].append(new_board.main[src_i].pop())
+                        new_board.move = new_board.free[dst_i].cards[-1]
                         yield new_board
                         break
 
@@ -245,6 +255,7 @@ class Board:
                         # Copy, move, and yield
                         new_board = Board(self)
                         new_board.goal[dst_i].append(new_board.main[src_i].pop())
+                        new_board.move = new_board.goal[dst_i].cards[-1]
                         yield new_board
                         break
 
@@ -253,6 +264,7 @@ class Board:
                     # Copy, move, and yield
                     new_board = Board(self)
                     new_board.flower.append(new_board.main[src_i].pop())
+                    new_board.move = new_board.flower.cards[-1]
                     yield new_board
 
         # Free space moves
@@ -272,6 +284,7 @@ class Board:
                         # Copy, move, and yield
                         new_board = Board(self)
                         new_board.goal[dst_i].append(new_board.free[src_i].pop())
+                        new_board.move = new_board.goal[dst_i].cards[-1]
                         yield new_board
                         break
 
@@ -293,6 +306,7 @@ class Board:
                     # Copy, move, and yield
                     new_board = Board(self)
                     new_board.main[dst_i].append(new_board.free[src_i].pop())
+                    new_board.move = new_board.main[dst_i].cards[-1]
                     yield new_board
 
                 # If dragon, try to 'collect' dragons
@@ -315,6 +329,7 @@ class Board:
                             new_board.free[src_i].append(new_board.free[i].pop())
                         for i in main_dragons:
                             new_board.free[src_i].append(new_board.main[i].pop())
+                        new_board.move = new_board.free[src_i].cards[0]
                         yield new_board
 
     def is_solved(self):
@@ -427,9 +442,6 @@ class Board:
 
     def from_image(self, board_image):
         """ Loads the board from an image of the board """
-        if not Deck.card_images:
-            raise LookupError('Deck does not have a card map.')
-
         # Load the free space cards.
         self.free = []
         for col in range(len(SUITS)):
@@ -454,10 +466,14 @@ class Board:
         for col in range(len(SUITS)):
             space = Goal()
             x, y = space.xy(col)
-            try:
-                space.append(Deck.card_from_image(board_image.crop((x, y, x + 20, y + 20))))
-            except LookupError:
-                pass
+            for shift in range(0, -9, -1):
+                try:
+                    card = Deck.card_from_image(board_image.crop((x, y+shift, x + 20, y+shift + 20)))
+                    for value in range(1, card.value + 1):
+                        space.append(Number(card.suit, value))
+                    break
+                except LookupError:
+                    pass
             self.goal.append(space)
 
         # Load the Main space cards
@@ -478,12 +494,15 @@ class Board:
         """ Generator that yields all visible cards in the board along with their screen coordinate offsets. """
         # Free spaces
         for col, free in enumerate(self.free):
-            try:
-                card = free.cards[-1]
-            except IndexError:
-                pass
-            else:
-                yield (card, *free.xy(col))
+            i = 0
+            while True:
+                try:
+                    card = free.cards[i]
+                except IndexError:
+                    break
+                else:
+                    yield (card, *free.xy(col))
+                i += 1
 
         # Flower space
         try:
@@ -563,6 +582,30 @@ class Solver:
                     return 'timed out'
         return 'solved'
 
+    def list_moves(self):
+        moves = []
+        for i, board in enumerate(self.board_list[1:]):
+            start = None
+            end = None
+            #print('move [{}] '.format(board.move), end='')
+            for card, x, y in self.board_list[i].card_coordinates():
+                if board.move is card:
+                    start = (x, y)
+                    #print('from ({},{}) '.format(x, y), end='')
+
+            for card, x, y in board.card_coordinates():
+                if board.move is card:
+                    end = (x, y)
+                    #print('to ({},{})'.format(x, y))
+            if start and end:
+                if start == end:
+                    if isinstance(board.move, Dragon):
+                        start = end = dragon_button_xy[board.move.suit]
+                        moves.append((start, end))
+                else:
+                    moves.append(((start[0]+50, start[1]+10), (end[0]+50, end[1]+10)))
+        return moves
+
 
 class Tests(unittest.TestCase):
     def test_card_compare(self):
@@ -629,7 +672,7 @@ class Tests(unittest.TestCase):
 
 if __name__ == '__main__':
     solver = Solver()
-    #lib.timeout = 2
+    #solver.timeout = 2
     board = Board()
 
     if False:

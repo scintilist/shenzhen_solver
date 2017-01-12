@@ -3,8 +3,8 @@ import pyautogui
 import time
 
 
-def get_live_board_image():
-    """ Get an image of the shenzhen solitare game board """
+def get_window():
+    """ Get the shenzhen solitare game window """
     # Find the SHENZHEN I/O Window, bring it to the front, and take a screenshot
     Gtk.main_iteration()
     screen = Wnck.Screen.get_default()
@@ -17,11 +17,20 @@ def get_live_board_image():
                 window.activate(int(time.time()))
             w = window
             break
-    if not w:
-        return None # Shenzhen I/O window not found.
+    return w
+
+
+def get_window_xy(w):
+    """ Get the x,y coordinates of the top left corner of the shenzhen solitare game window """
+    xp, yp, width, height = w.get_client_window_geometry()
+    return xp, yp
+
+
+def get_live_board_image(w):
+    """ Get an image of the shenzhen solitare game board """
 
     xp, yp, width, height = w.get_client_window_geometry()
-    #print('Window at ({}px,{}px) and has dimensions {}px X {}px'.format(xp, yp, width, height))
+    print('Window at ({}px,{}px) and has dimensions {}px X {}px'.format(xp, yp, width, height))
 
     # Delay to allow time for the window to make it to the front
     time.sleep(.5)
