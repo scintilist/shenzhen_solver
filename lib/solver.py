@@ -346,8 +346,58 @@ class Board:
                         return
 
         # Then regular moves
+        # Free space moves
+        for src_i, src in enumerate(self.free):
+            if len(src.cards) == 1:
+                # If dragon, try to 'collect' dragons
+                if isinstance(src.cards[-1], Dragon):
+                    suit = src.cards[-1].suit
+                    main_dragons = []
+                    for i, space in enumerate(self.main):
+                        if space.cards and isinstance(space.cards[-1], Dragon) and space.cards[-1].suit == suit:
+                            main_dragons.append(i)
+                    free_dragons = []
+                    for i, space in enumerate(self.free):
+                        if space.cards and isinstance(space.cards[-1], Dragon) and space.cards[-1].suit == suit:
+                            free_dragons.append(i)
+
+                    # If the length of the lists of dragon spaces is 4, then pop them all to the free space.
+                    if len(free_dragons) + len(main_dragons) == DRAGONS:
+                        # Copy, move, and yield
+                        new_board = Board(self)
+                        for i in free_dragons:
+                            new_board.free[src_i].append(new_board.free[i].pop())
+                        for i in main_dragons:
+                            new_board.free[src_i].append(new_board.main[i].pop())
+                        new_board.move = new_board.free[src_i].cards[0]
+                        yield new_board
+
         # Main space moves
         for src_i, src in enumerate(self.main):
+            # Single card moves
+            if src.cards:
+                # To goal spaces
+                if isinstance(src.cards[-1], Number):
+                    for dst_i, dst in enumerate(self.goal):
+                        if (dst.cards and
+                                src.cards[-1].suit == dst.cards[-1].suit and
+                                src.cards[-1].value == dst.cards[-1].value + 1):
+                            # Copy, move, and yield
+                            new_board = Board(self)
+                            new_board.goal[dst_i].append(new_board.main[src_i].pop())
+                            new_board.move = new_board.goal[dst_i].cards[-1]
+                            yield new_board
+                            break
+                # To free spaces
+                for dst_i, dst in enumerate(self.free):
+                    if not dst.cards:
+                        # Copy, move, and yield
+                        new_board = Board(self)
+                        new_board.free[dst_i].append(new_board.main[src_i].pop())
+                        new_board.move = new_board.free[dst_i].cards[-1]
+                        yield new_board
+                        break
+
             # Card stack moves to other main spaces
             for height in range(1, len(src.cards)+1):
                 # Break when the stack becomes unmovable
@@ -387,30 +437,7 @@ class Board:
                     new_board.move = new_board.main[dst_i].cards[-height]
                     yield new_board
 
-            # Single card moves
-            if src.cards:
-                # To free spaces
-                for dst_i, dst in enumerate(self.free):
-                    if not dst.cards:
-                        # Copy, move, and yield
-                        new_board = Board(self)
-                        new_board.free[dst_i].append(new_board.main[src_i].pop())
-                        new_board.move = new_board.free[dst_i].cards[-1]
-                        yield new_board
-                        break
 
-                # To goal spaces
-                if isinstance(src.cards[-1], Number):
-                    for dst_i, dst in enumerate(self.goal):
-                        if (dst.cards and
-                                src.cards[-1].suit == dst.cards[-1].suit and
-                                src.cards[-1].value == dst.cards[-1].value + 1):
-                            # Copy, move, and yield
-                            new_board = Board(self)
-                            new_board.goal[dst_i].append(new_board.main[src_i].pop())
-                            new_board.move = new_board.goal[dst_i].cards[-1]
-                            yield new_board
-                            break
 
         # Free space moves
         for src_i, src in enumerate(self.free):
@@ -454,28 +481,6 @@ class Board:
                     new_board.move = new_board.main[dst_i].cards[-1]
                     yield new_board
 
-                # If dragon, try to 'collect' dragons
-                if isinstance(src.cards[-1], Dragon):
-                    suit = src.cards[-1].suit
-                    main_dragons = []
-                    for i, space in enumerate(self.main):
-                        if space.cards and isinstance(space.cards[-1], Dragon) and space.cards[-1].suit == suit:
-                            main_dragons.append(i)
-                    free_dragons = []
-                    for i, space in enumerate(self.free):
-                        if space.cards and isinstance(space.cards[-1], Dragon) and space.cards[-1].suit == suit:
-                            free_dragons.append(i)
-
-                    # If the length of the lists of dragon spaces is 4, then pop them all to the free space.
-                    if len(free_dragons) + len(main_dragons) == DRAGONS:
-                        # Copy, move, and yield
-                        new_board = Board(self)
-                        for i in free_dragons:
-                            new_board.free[src_i].append(new_board.free[i].pop())
-                        for i in main_dragons:
-                            new_board.free[src_i].append(new_board.main[i].pop())
-                        new_board.move = new_board.free[src_i].cards[0]
-                        yield new_board
 
     def is_solved(self):
         """ Returns True if the board is solved. """
@@ -847,7 +852,7 @@ if __name__ == '__main__':
 
     longest = 0
     longest_seed = 0
-    for i in [1, 2, 3]:
+    for i in [1, 2, 3, 4, 5, 6, 7, 9]:
         seed(i)
         board.randomize()
         #print(board)
@@ -857,7 +862,7 @@ if __name__ == '__main__':
         if duration > longest:
             longest = duration
             longest_seed = i
-        print('Seed {} {} in {:.3f} seconds after {} boards tested'.format(
-                i, solved, duration, solver.count))
+        print('Seed {} {} in {:.3f} seconds after {} boards tested, takes {} moves'.format(
+                i, solved, duration, solver.count, len(solver.board_list)))
 
     print('Longest time to solve was {:.3f} seconds for seed {}'.format(longest, longest_seed))
