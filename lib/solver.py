@@ -329,7 +329,7 @@ class StackMove(Turn):
         :yield turn: Yields all stack move turns valid for the board
         """
         # From main and free to goal
-        for src in board.free + board.main:
+        for src in board.main + board.free:
             if src.cards and isinstance(src.cards[-1], Number):
                 for dst in board.goal:
                     if dst.cards:
@@ -348,6 +348,27 @@ class StackMove(Turn):
                         yield StackMove(src, dst, 1)
                         break
 
+        # From main to main
+        for src in board.main:
+            for n in range(1, len(src.cards) + 1):
+                # Break when the stack becomes unmovable
+                if n > 1 and not (
+                        isinstance(src.cards[-n + 1], Number) and isinstance(src.cards[-n], Number) and
+                        src.cards[-n + 1].suit != src.cards[-n].suit and
+                        src.cards[-n + 1].value == src.cards[-n].value - 1):
+                    break
+                moved_to_empty = False  # Flag set when moved to an empty stack
+                for dst in board.main:
+                    if src != dst:
+                        if dst.cards:
+                            if (isinstance(src.cards[-n], Number) and isinstance(dst.cards[-1], Number) and
+                                    src.cards[-n].suit != dst.cards[-1].suit and
+                                    src.cards[-n].value == dst.cards[-1].value - 1):
+                                yield StackMove(src, dst, n)
+                        elif not moved_to_empty:
+                            moved_to_empty = True
+                            yield StackMove(src, dst, n)
+
         # From free to main
         for src in board.free:
             if len(src.cards) == 1:
@@ -361,26 +382,6 @@ class StackMove(Turn):
                     elif not moved_to_empty:
                         moved_to_empty = True
                         yield StackMove(src, dst, 1)
-
-        # From main to main
-        for src in board.main:
-            for n in range(1, len(src.cards) + 1):
-                # Break when the stack becomes unmovable
-                if n > 1 and not (isinstance(src.cards[-n+1], Number) and isinstance(src.cards[-n], Number) and
-                        src.cards[-n+1].suit != src.cards[-n].suit and
-                        src.cards[-n+1].value == src.cards[-n].value - 1):
-                    break
-                moved_to_empty = False  # Flag set when moved to an empty stack
-                for dst in board.main:
-                    if src != dst:
-                        if dst.cards:
-                            if (isinstance(src.cards[-n], Number) and isinstance(dst.cards[-1], Number) and
-                                    src.cards[-n].suit != dst.cards[-1].suit and
-                                    src.cards[-n].value == dst.cards[-1].value - 1):
-                                yield StackMove(src, dst, n)
-                        elif not moved_to_empty:
-                            moved_to_empty = True
-                            yield StackMove(src, dst, n)
 
 
 class Auto(StackMove):
