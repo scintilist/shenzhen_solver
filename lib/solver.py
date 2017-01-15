@@ -437,8 +437,6 @@ class Board:
                     new_board.move = new_board.main[dst_i].cards[-height]
                     yield new_board
 
-
-
         # Free space moves
         for src_i, src in enumerate(self.free):
             if len(src.cards) == 1:
@@ -480,7 +478,6 @@ class Board:
                     new_board.main[dst_i].append(new_board.free[src_i].pop())
                     new_board.move = new_board.main[dst_i].cards[-1]
                     yield new_board
-
 
     def is_solved(self):
         """ Returns True if the board is solved. """
