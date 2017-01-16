@@ -1,36 +1,94 @@
 from gi.repository import Gtk, Wnck
 import pyautogui
-import time
+from time import sleep, time
+
+# Reference to the SHENZHEN I/O game window
+window = None
+
+# Mouse movement settings
+speed = 5000  # Mouse move speed in pixels/second (default=5000)
+min_time = 0.1  # Minimum mouse move time in seconds (default=0.1)
+sleep_duration = 0.0  # Time to sleep after each mouse move (default=0.0)
 
 
-def get_window():
-    """ Get the shenzhen solitare game window """
-    # Find the SHENZHEN I/O Window and bring it to the front
+def vector_sum(*args):
+    """ Add vectors of equal length, used to add xy coordinates together
+
+    :param args: list of vectors to add together
+    :return: vector sum of all args
+    """
+    return (*map(sum, zip(*args)),)
+
+
+def distance(a, b):
+    """ Return the distance between points a and b """
+    return sum(map(lambda x, y: (x - y) ** 2, a, b)) ** 0.5
+
+
+def absolute(point):
+    """ Convert game window coordinates to absolute coordinates
+
+    :param point: xy coordinates relative to the game window
+    :return: absolute xy coordinates
+    """
+    x, y, width, height = window.get_client_window_geometry()
+    return vector_sum((x, y), point)
+
+
+def move_to(x, y):
+    """ Move the mouse to the game window relative coordinates, following the Turn settings. """
+    point = absolute((x, y))
+    pyautogui.moveTo(*point, duration=min_time + distance(pyautogui.position(), point) / speed)
+    sleep(sleep_duration)
+
+
+def drag_to(x, y):
+    """ Move the mouse to the game window relative coordinates, following the Turn settings. """
+    point = absolute((x, y))
+    pyautogui.dragTo(*point, duration=min_time + distance(pyautogui.position(), point) / speed)
+    sleep(sleep_duration)
+
+
+def click():
+    """ Click the mouse at the current position. """
+    pyautogui.mouseDown()
+    pyautogui.mouseUp()
+
+
+def find_window():
+    """ Find the SHENZHEN I/O Window and bring it to the front """
+    global window
+    window = None
+
     Gtk.main_iteration()
     screen = Wnck.Screen.get_default()
     screen.force_update()
 
-    w = None
-    for window in screen.get_windows():
-        if window.get_name() == 'SHENZHEN I/O':
-            if not window.is_active():
-                window.activate(int(time.time()))
-            w = window
-            break
-    return w
+    for w in screen.get_windows():
+        if w.get_name() == 'SHENZHEN I/O':
+            if not w.is_active():
+                w.activate(int(time()))
+            window = w
+            return
+    raise RuntimeError('Shenzhen I/O window not found')
 
 
-def get_window_xy(w):
+def get_window_xy():
     """ Get the x,y coordinates of the top left corner of the shenzhen solitare game window """
-    xp, yp, width, height = w.get_client_window_geometry()
+    xp, yp, width, height = window.get_client_window_geometry()
     return xp, yp
 
 
-def get_live_board_image(w):
+def get_board_image():
     """ Get an image of the shenzhen solitare game board """
-    xp, yp, width, height = w.get_client_window_geometry()
+    xp, yp, width, height = window.get_client_window_geometry()
     image = pyautogui.screenshot()
     return image.crop((xp, yp, xp + width, yp + height))
+
+
+def get_card_image(image, x,y):
+    """ Crop the board image to the 20 x 20 pixel card image at the given xy coordinates """
+    return image.crop((x, y, x + 20, y + 20))
 
 
 def correlation(im1, im2):

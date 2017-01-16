@@ -1,20 +1,18 @@
 import unittest
 import cProfile
 
-from time import perf_counter, sleep
-from functools import reduce
-
-from random import shuffle, seed
 from collections import namedtuple
+from copy import copy
+from functools import reduce
 import pickle
+from random import shuffle, seed
+from time import perf_counter, sleep
+import warnings
+
 from PIL import Image, ImageDraw, ImageFont
 import pyautogui
 
 from lib import gui
-import warnings
-
-from copy import copy
-
 
 """ Constants """
 COLUMNS = 8              # Number of Columns in the main board
@@ -161,39 +159,10 @@ class Main(Space):
         return self.i*152 + 170, (len(self.cards) - count) * 31 + 309
 
 
-def vector_sum(*args):
-    """ Add vectors of equal length, used to add xy coordinates together
-
-    :param args: list of vectors to add together
-    :return: vector sum of all args
-    """
-    return (*map(sum, zip(*args)),)
-
-
-def distance(a, b):
-    """ Return the distance between points a and b """
-    return sum(map(lambda x, y: (x - y) ** 2, a, b)) ** 0.5
-
-
 # Turn classes
 class Turn:
     """ Base turn, can be one of several types, which have different initializers """
-
-    window = None  # The game window
-    speed = 5000  # Mouse move speed in pixels/second (default=5000)
-    min_time = 0.1  # Minimum mouse move time in seconds (default=0.1)
-    sleep_duration = 0.0  # Time to sleep after each mouse move (default=0.0)
     wait_duration = 0.25  # Seconds to wait while the automatic move executes (default=0.25)
-
-    @staticmethod
-    def absolute(point):
-        """ Convert game window coordinates to absolute coordinates
-
-        :param point: xy coordinates relative to the game window
-        :return: absolute xy coordinates
-        """
-        x, y, width, height = Turn.window.get_client_window_geometry()
-        return vector_sum((x, y), point)
 
     @staticmethod
     def generate(board):
@@ -224,11 +193,8 @@ class CollectDragons(Turn):
 
         :param verify: No effect
         """
-        point = Turn.absolute(CollectDragons.button_xy[self.dst.cards[-1].suit])
-        pyautogui.moveTo(*point, duration=Turn.min_time + distance(pyautogui.position(), point) / Turn.speed)
-        sleep(Turn.sleep_duration)
-        pyautogui.mouseDown()
-        pyautogui.mouseUp()
+        gui.move_to(*CollectDragons.button_xy[self.dst.cards[-1].suit])
+        gui.click()
         sleep(Turn.wait_duration)
 
     def apply(self, board):
@@ -284,15 +250,12 @@ class StackMove(Turn):
         :param verify: True to verify that the board matches the expected state before executing the move
         """
         # Move to the start
-        im_start = Turn.absolute(self.src.xy(self.count))
-        start = vector_sum(im_start, StackMove.click_offset)
-        pyautogui.moveTo(*start, duration=Turn.min_time + distance(pyautogui.position(), start) / Turn.speed)
-        sleep(Turn.sleep_duration)
+        start = gui.vector_sum(self.src.xy(self.count), StackMove.click_offset)
+        gui.move_to(*start)
 
         if verify:
             # Verify the card
-            image = pyautogui.screenshot()
-            card_image = image.crop((*im_start, *vector_sum(im_start, (20, 20))))
+            card_image = gui.get_card_image(gui.get_board_image(), *self.src.xy(self.count))
             try:
                 if self.src.cards[-self.count] != Deck.card_from_image(card_image):
                     raise LookupError
@@ -300,13 +263,12 @@ class StackMove(Turn):
                 raise RuntimeError('Drag move source card does not match the expected card image.')
 
         # Verify the mouse position
-        if pyautogui.position() != start:
+        if pyautogui.position() != gui.absolute(start):
             raise RuntimeError('Mouse not in expected position')
 
         # Drag the card
-        end = Turn.absolute(vector_sum(self.dst.xy(0), StackMove.click_offset))
-        pyautogui.dragTo(*end, duration=Turn.min_time + distance(pyautogui.position(), end) / Turn.speed)
-        sleep(Turn.sleep_duration)
+        end = gui.vector_sum(self.dst.xy(0), StackMove.click_offset)
+        gui.drag_to(*end)
 
     def apply(self, board):
         """ Run the turn on the given board to generate the next board
@@ -657,46 +619,15 @@ class Board:
 
     def card_coordinates(self):
         """ Generator that yields all visible cards in the board along with their screen coordinate offsets. """
-        # Free spaces
-        for col, free in enumerate(self.free):
-            i = 0
-            while True:
-                try:
-                    card = free.cards[i]
-                except IndexError:
-                    break
-                else:
-                    yield (card, *free.xy())
-                i += 1
-
-        # Flower space
-        try:
-            card = self.flower.cards[-1]
-        except IndexError:
-            pass
-        else:
-            yield (card, *self.flower.xy())
-
-        # Goal spaces
-        for col, goal in enumerate(self.goal):
-            try:
-                card = goal.cards[-1]
-            except IndexError:
-                pass
-            else:
-                yield (card, *goal.xy())
+        # Free, goal, and flower spaces
+        for space in self.free + self.goal + [self.flower]:
+            for card in space.cards:
+                yield (card, *space.xy())
 
         # Main spaces
-        for col, main in enumerate(self.main):
-            row = 1
-            while True:
-                try:
-                    card = main.cards[-row]
-                except IndexError:
-                    break
-                else:
-                    yield (card, *main.xy(row))
-                row += 1
+        for space in self.main:
+            for row, card in enumerate(space.cards):
+                yield (card, *space.xy(len(space.cards) - row))
 
     def key(self):
         return (frozenset(self.main),) + (frozenset(self.free),) + tuple(frozenset(self.goal),) + (self.flower,)
@@ -762,16 +693,54 @@ class Solve:
 
     def prune(self):
         """ Shorten the solution by merging and removing non-productive turns. """
-        pass
-        # TODO: Merge consecutive moves of the same card
+        initial_length = len(self.turns)
 
-        # TODO: Remove pairs of moves that do not affect the board state
+        # Merge consecutive moves of the same card
+        i = 0
+        while i < len(self.turns) - 1:
+            if (isinstance(self.turns[i], StackMove) and
+                    isinstance(self.turns[i+1], StackMove) and
+                    type(self.turns[i].dst) == type(self.turns[i+1].src) and
+                    self.turns[i].dst.i == self.turns[i+1].src.i and
+                    self.turns[i].count == self.turns[i+1].count):
+                # print('Merged turns {} ({}) and {} ({})'.format(i, self.turns[i], i+1, self.turns[i+1]))
+                self.turns[i].dst = self.turns[i+1].dst
+                del self.turns[i+1]
+            else:
+                i += 1
+
+        # Remove pairs of moves that do not affect the board state
         # If a card is moved, and then returns to it's state without ever having cards stacked on it
         # or the original source, then the set of moves can be removed.
+        i = 0
+        while i < len(self.turns):
+            if isinstance(self.turns[i], StackMove):
+                src = self.turns[i].src
+                dst = self.turns[i].dst
+                count = self.turns[i].count
+                j = i + 1
+                while j < len(self.turns):
+                    if isinstance(self.turns[j], StackMove):
+                        if (type(self.turns[j].src) == type(dst) and self.turns[j].src.i == dst.i and
+                                type(self.turns[j].dst) == type(src) and self.turns[j].dst.i == src.i and
+                                self.turns[j].count == count):
+                            # print('Removed turn {}, {}'.format(i, self.turns[i]))
+                            # print('Removed turn {}, {}'.format(j, self.turns[j]))
+                            del self.turns[j]
+                            del self.turns[i]
+                            i -= 1
+                            break
+                        if ((type(self.turns[j].src) == type(dst) and self.turns[j].src.i == dst.i) or
+                                (type(self.turns[j].dst) == type(dst) and self.turns[j].dst.i == dst.i) or
+                                (type(self.turns[j].src) == type(src) and self.turns[j].src.i == src.i) or
+                                (type(self.turns[j].dst) == type(src) and self.turns[j].dst.i == src.i)):
+                            break
+                    j += 1
+            i += 1
 
-        # At each move, scan ahead to see if the card ever ends up back in the same position
-        # once found, check between that the original stack was never modified
-        # check that the moved stack has not been modified in this time
+        # Repeat pruning until it passes without shortening the solution
+        if len(self.turns) < initial_length:
+            self.prune()
 
     def exec(self, show=False, verify=False):
         """ Execute the solution in the game.
@@ -789,7 +758,7 @@ class Solve:
         if self.result == 'solved':
             for i, turn in enumerate(self.turns):
                 print(self.boards[i])
-                print(turn)
+                print(i, turn)
             if self.boards:
                 print(self.boards[-1])
             print('Solution takes {} turns.'.format(len(self.turns)))
@@ -871,16 +840,17 @@ if __name__ == '__main__':
         exit()
 
     seeds = [1, 2, 3, 4, 5, 6, 7, 9]
+    #seeds = [1]
     move_count = 0
     for i in seeds:
         seed(i)
         board = Board()
         board.randomize()
-        #print(board)
         solution = Solve(board)
+        #solution.print()
         solution.prune()
 
         print('Seed {} {} in {:.3f} seconds after {} boards tested, takes {} moves'.format(
-                i, solution.result, solution.duration, len(solution.board_cache), len(solution.boards)))
-        move_count += len(solution.boards)
+                i, solution.result, solution.duration, len(solution.board_cache), len(solution.turns)))
+        move_count += len(solution.turns)
     print('Average solution takes {} moves.'.format(move_count//len(seeds)))
