@@ -311,14 +311,18 @@ class StackMove(Turn):
                         break
 
         # From main to main
+        # Move in order from tallest to shortest stack for each space
         for src in board.main:
-            for n in range(1, len(src.cards) + 1):
+            src.max_n = len(src.cards)
+            for n in range(2, len(src.cards)+1):
                 # Break when the stack becomes unmovable
-                if n > 1 and not (
-                        isinstance(src.cards[-n + 1], Number) and isinstance(src.cards[-n], Number) and
+                if not (isinstance(src.cards[-n + 1], Number) and isinstance(src.cards[-n], Number) and
                         src.cards[-n + 1].suit != src.cards[-n].suit and
                         src.cards[-n + 1].value == src.cards[-n].value - 1):
+                    src.max_n = n - 1
                     break
+            for n in range(src.max_n, 0, -1):
+                # Move stacks from largest to smallest
                 moved_to_empty = False  # Flag set when moved to an empty stack
                 for dst in board.main:
                     if src != dst:
@@ -741,6 +745,11 @@ class Solve:
         # Repeat pruning until it passes without shortening the solution
         if len(self.turns) < initial_length:
             self.prune()
+        else:
+            # Rebuild the board list
+            self.boards = [self.board]
+            for turn in self.turns:
+                self.boards.append(turn.apply(self.boards[-1]))
 
     def exec(self, show=False, verify=False):
         """ Execute the solution in the game.
@@ -832,6 +841,7 @@ class Tests(unittest.TestCase):
 
 
 if __name__ == '__main__':
+    """ Randomly generate boards, then solve them """
     if False:
         seed(47)
         board = Board()
@@ -839,16 +849,16 @@ if __name__ == '__main__':
         cProfile.run('Solve(board)')
         exit()
 
+    #seeds = range(100)
     seeds = [1, 2, 3, 4, 5, 6, 7, 9]
-    #seeds = [1]
     move_count = 0
     for i in seeds:
         seed(i)
         board = Board()
         board.randomize()
         solution = Solve(board)
-        #solution.print()
         solution.prune()
+        #solution.print()
 
         print('Seed {} {} in {:.3f} seconds after {} boards tested, takes {} moves'.format(
                 i, solution.result, solution.duration, len(solution.board_cache), len(solution.turns)))

@@ -45,7 +45,7 @@ def get_board():
     # Click the new game button, then wait for the board to be generated
     gui.move_to(1270, 850)
     gui.click()
-    sleep(5)
+    sleep(6)  # 5 is enough for the initial deal, but not if there are automatic moves
 
     # Load the board from the image
     board_image = gui.get_board_image()

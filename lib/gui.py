@@ -6,7 +6,7 @@ from time import sleep, time
 window = None
 
 # Mouse movement settings
-speed = 5000  # Mouse move speed in pixels/second (default=5000)
+speed = 100000  # Mouse move speed in pixels/second (default=5000)
 min_time = 0.1  # Minimum mouse move time in seconds (default=0.1)
 sleep_duration = 0.0  # Time to sleep after each mouse move (default=0.0)
 
