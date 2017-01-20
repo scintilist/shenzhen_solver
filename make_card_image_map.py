@@ -1,6 +1,6 @@
 """ Run this script to map the card images to card values.
     To use:
-    1) Run SHENZHEN I/O solitare in a window at 1440x900 resolution
+    1) Run SHENZHEN I/O solitare in a window with at least 1440x900 resolution
     2) Use the screenshot script to save screenshots of solitare boards
     3) Save board text files and fill them in to match the board images, saving each with the same file name
     4) Run this script, which will generate the card image map from

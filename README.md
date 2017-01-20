@@ -11,7 +11,7 @@ The solving algorithm is weighted A*, with the cost function being the number of
 
 ## Getting Started
 
-Launch the Shenzhen I/O Solitaire game in a 1440x900 window, then run 'auto_solver.py' to repeatedly solve games.
+Launch the Shenzhen I/O Solitaire game in window with at least 1440x900 resolution, then run 'auto_solver.py' to repeatedly solve games.
 The auto solver script can be halted by moving the mouse during the execution of the solution.
 
 ### Prerequisites

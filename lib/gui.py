@@ -6,6 +6,10 @@ from gi.repository import Gtk, Wnck
 import pyautogui
 from time import sleep, time
 
+# Minimum game window resolution
+min_width = 1440
+min_height = 900
+
 # Reference to the SHENZHEN I/O game window
 window = None
 
@@ -35,8 +39,7 @@ def absolute(point):
     :param point: xy coordinates relative to the game window
     :return: absolute xy coordinates
     """
-    x, y, width, height = window.get_client_window_geometry()
-    return vector_sum((x, y), point)
+    return vector_sum(get_board_xy(), point)
 
 
 def move_to(x, y):
@@ -77,20 +80,22 @@ def find_window():
     raise RuntimeError('Shenzhen I/O window not found')
 
 
-def get_window_xy():
+def get_board_xy():
     """ Get the x,y coordinates of the top left corner of the shenzhen solitare game window. """
     xp, yp, width, height = window.get_client_window_geometry()
+    xp += (width-min_width) // 2
+    yp += (height-min_height) // 2
     return xp, yp
 
 
 def get_board_image():
     """ Get an image of the shenzhen solitare game board. """
-    xp, yp, width, height = window.get_client_window_geometry()
     image = pyautogui.screenshot()
-    return image.crop((xp, yp, xp + width, yp + height))
+    xp, yp = get_board_xy()
+    return image.crop((xp, yp, xp + min_width, yp + min_height))
 
 
-def get_card_image(image, x,y):
+def get_card_image(image, x, y):
     """ Crop the board image to the 20 x 20 pixel card image at the given xy coordinates. """
     return image.crop((x, y, x + 20, y + 20))
 

@@ -1,4 +1,4 @@
-""" Run this script to save a png screenshot of the board, the first arg is the file name to save as. """
+""" Run this script to save a screenshot of the board, the first arg is the file name to save as. """
 from lib import gui
 from sys import argv
 from time import sleep
