@@ -50,7 +50,7 @@ class Deck:
     @staticmethod
     def update_card_image_map(board_image, board):
         for card, x, y in board.card_coordinates():
-            Deck.card_images[card] = board_image.crop((x, y, x + 20, y + 20))
+            Deck.card_images[card] = gui.get_card_image(board_image, x, y)
 
     @staticmethod
     def save_card_image_map(fn):
@@ -230,7 +230,7 @@ class CollectDragons(Turn):
         # Reverse order, since the dragon collection must put them in the left most available free space
         for dst in board.free[::-1]:
             if not dst.cards:
-                suits.update({suit: dst for suit in SUITS if suit not in suits})
+                suits = {suit: dst for suit in SUITS}
             elif isinstance(dst.cards[-1], Dragon):
                 suits[dst.cards[-1].suit] = dst
 
@@ -448,8 +448,23 @@ class Board:
         self.score = self.turn_count + self.cards_remaining * 4
 
     def is_solved(self):
-        """ Returns True if the board is solved. Must call calc_score before this to get a valid response. """
-        return not self.cards_remaining
+        """ Returns True if the board is solved. """
+        # Goal spaces all 9's
+        if any(not space.cards or space.cards[-1].value != VALUES[-1] for space in self.goal):
+            return False
+
+        # Free spaces all dragons
+        if any(len(space.cards) != DRAGONS for space in self.free):
+            return False
+
+        # Flower space filled
+        if not self.flower.cards:
+            return False
+        return True
+
+    def is_complete(self):
+        """ Returns True if the board contains 40 cards, does not verify the card types, suits, or values. """
+        return sum(len(space.cards) for space in self.stacks + self.free + self.goal + [self.flower]) == 40
 
     def randomize(self):
         """ Create a random board. """
@@ -600,7 +615,7 @@ class Board:
             space = Free(col)
             x, y = space.xy()
             try:
-                space.append(Deck.card_from_image(board_image.crop((x, y, x + 20, y + 20))))
+                space.append(Deck.card_from_image(gui.get_card_image(board_image, x, y)))
             except LookupError:
                 pass
             self.free.append(space)
@@ -609,7 +624,7 @@ class Board:
         self.flower = FlowerSpace(0)
         try:
             x, y = self.flower.xy()
-            self.flower.append(Deck.card_from_image(board_image.crop((x, y, x + 20, y + 20))))
+            self.flower.append(Deck.card_from_image(gui.get_card_image(board_image, x, y)))
         except LookupError:
             pass
 
@@ -620,7 +635,7 @@ class Board:
             x, y = space.xy()
             for shift in range(0, -9, -1):
                 try:
-                    card = Deck.card_from_image(board_image.crop((x, y+shift, x + 20, y+shift + 20)))
+                    card = Deck.card_from_image(gui.get_card_image(board_image, x, y+shift))
                     for value in range(1, card.value + 1):
                         space.append(Number(card.suit, value))
                     break
@@ -635,7 +650,7 @@ class Board:
             try:
                 while True:
                     x, y = space.xy()
-                    space.append(Deck.card_from_image(board_image.crop((x, y, x + 20, y + 20))))
+                    space.append(Deck.card_from_image(gui.get_card_image(board_image, x, y)))
             except (LookupError, IndexError):
                 pass
             self.stacks.append(space)
@@ -752,6 +767,20 @@ class Solve:
                 print('Attempting: ' + str(board.turn))
             board.turn.exec(verify=verify)
         self.exec_time = perf_counter() - start_time
+
+        # Verify the board has been solved by watching for the movement of the flower card
+        if verify:
+            try:
+                Deck.card_from_image(gui.get_card_image(gui.get_board_image(), *FlowerSpace(0).xy()))
+            except LookupError:
+                pass  # fail
+            else:
+                sleep(1)  # Wait for the auto clearing of the board to move the flower card
+                try:
+                    Deck.card_from_image(gui.get_card_image(gui.get_board_image(), *FlowerSpace(0).xy()))
+                except LookupError:
+                    return  # success
+            self.result = 'exec failed'
 
     def print(self):
         """ Print all of the turns and boards in the solution. """

@@ -8,6 +8,7 @@ from time import sleep, perf_counter
 
 from lib.solver import Solve, Board, Deck, Stats
 from lib import gui
+import traceback
 
 # Maximum time to attempt the solution before giving up and getting a new board
 TIMEOUT = 10.0
@@ -21,14 +22,16 @@ def get_board():
     # Click the new game button, then wait for the board to be generated
     gui.move_to(1270, 850)
     gui.click()
-    sleep(6)  # 5 is enough for the initial deal, but not if there are automatic moves
+    sleep(4)
 
-    # Load the board from the image
-    board_image = gui.get_board_image()
-    board = Board()
-    board.from_image(board_image)
-    return board
-
+    # Load the board from the image, loop until the board is completely dealt, or it times out after 10 tries
+    for i in range(10):
+        board = Board()
+        board.from_image(gui.get_board_image())
+        if board.is_complete():
+            return board
+        sleep(0.2)
+    raise RuntimeError('Could not find a complete board.')
 
 if __name__ == '__main__':
     """ Solve boards repeatedly. Print some basic stats. """
@@ -50,16 +53,19 @@ if __name__ == '__main__':
 
             # Execute the solution
             if solution.result == 'solved':
-                print('Solved in {} turns.'.format(solution.turn_count))
+                print('Solution takes {} turns.'.format(solution.turn_count))
                 solution.exec(show=False, verify=False)
                 print('Solution executed in {:.3f} seconds'.format(solution.exec_time))
+
+            if solution.result == 'exec failed':
+                print('Board solution execution failed to produce a solved board.')
 
             # Show stats
             stats.add(solution)
 
             print(stats)
             print('Total elapsed time: {:0.3f}s'.format(perf_counter() - start_time))
-    except (KeyboardInterrupt, RuntimeError):
-        print('Interrupted.')
+    except:
+        traceback.print_exc()
         print(stats)
         print('Total elapsed time: {:0.3f}s'.format(perf_counter() - start_time))
