@@ -217,7 +217,7 @@ class CollectDragons(Turn):
         return next_board
 
     def __str__(self):
-        return 'Collect dragons of suit {}'.format(self.dst.cards[-1].suit)
+        return 'Collect dragons of suit {}'.format(self.srcs[0].cards[-1].suit)
 
     @staticmethod
     def generate(board):
@@ -227,7 +227,8 @@ class CollectDragons(Turn):
         :yield turn: Yields all dragon turns valid for the board
         """
         suits = {}
-        for dst in board.free:
+        # Reverse order, since the dragon collection must put them in the left most available free space
+        for dst in board.free[::-1]:
             if not dst.cards:
                 suits.update({suit: dst for suit in SUITS if suit not in suits})
             elif isinstance(dst.cards[-1], Dragon):
