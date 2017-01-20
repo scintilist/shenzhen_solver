@@ -1,9 +1,8 @@
-""" This script solves the Shenzhen solitare game, using pyautogui to move the mouse and click.
+""" This script solves the Shenzhen I/O Solitaire game, using pyautogui to move the mouse and click.
     To use:
-    1) Run SHENZHEN I/O solitare in a window at 1440x900 resolution (make sure the window is within the screen border)
-    2) Run this script, it will bring the solitare window into focus if it is in the background
+    1) Run SHENZHEN I/O Solitaire in a window at 1440x900 resolution (make sure the window is within the screen border)
+    2) Run this script, it will bring the solitaire window into focus if it is in the background
     3) Games will be solved continuously until the script is killed, or the mouse is moved while a solution is executing
-
 """
 from time import sleep, perf_counter
 
@@ -40,23 +39,27 @@ if __name__ == '__main__':
 
     stats = Stats()
     sleep(1)
-    while True:
-        # Get a new board to solve
-        board = get_board()
-        print(board)
+    try:
+        while True:
+            # Get a new board to solve
+            board = get_board()
+            print(board)
 
-        # Calculate solution
-        solution = Solve(board, timeout=TIMEOUT)
+            # Calculate solution
+            solution = Solve(board, timeout=TIMEOUT)
 
-        # Execute the solution
-        if solution.result == 'solved':
-            print('Solved in {} turns.'.format(solution.turn_count))
-            solution.exec(show=False, verify=False)
-            print('Solution executed in {:.3f} seconds'.format(solution.exec_time))
+            # Execute the solution
+            if solution.result == 'solved':
+                print('Solved in {} turns.'.format(solution.turn_count))
+                solution.exec(show=False, verify=False)
+                print('Solution executed in {:.3f} seconds'.format(solution.exec_time))
 
-        # Show stats
-        stats.add(solution)
+            # Show stats
+            stats.add(solution)
+
+            print(stats)
+            print('Total elapsed time: {:0.3f}s'.format(perf_counter() - start_time))
+    except (KeyboardInterrupt, RuntimeError):
+        print('Interrupted.')
         print(stats)
-
-        elapsed_time = perf_counter() - start_time
-        print('Total elapsed time: {:0.3f}s'.format(elapsed_time))
+        print('Total elapsed time: {:0.3f}s'.format(perf_counter() - start_time))
