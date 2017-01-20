@@ -71,7 +71,7 @@ if __name__ == '__main__':
 
         if solution.result != 'solved':
             results.update([solution.result])
-            print('Timed out.')
+            print('Not solved.')
             continue
 
         solution.prune()
