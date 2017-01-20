@@ -1,13 +1,13 @@
 import unittest
-import cProfile
 
-from collections import namedtuple
+from collections import namedtuple, Counter
 from copy import copy
 from functools import reduce
 from heapq import heappush, heappop
 import pickle
 from random import shuffle, seed
-from time import perf_counter, sleep
+from statistics import mean, median
+from time import perf_counter, process_time, sleep
 import warnings
 
 from PIL import Image, ImageDraw, ImageFont
@@ -19,8 +19,8 @@ from lib import gui
 COLUMNS = 8              # Number of stack columns
 ROWS = 5                 # Number of rows in the stacks
 DRAGONS = 4              # Size of each set of dragons
-SUITS = ['R', 'G', 'B']  # Suit iterable
-VALUES = range(1, 10)    # Value iterable
+SUITS = ['R', 'G', 'B']  # Card suit iterable
+VALUES = range(1, 10)    # Card value iterable
 
 # Card classes, uses named tuples to be fast and lightweight
 Flower = namedtuple('Flower', [])
@@ -28,6 +28,9 @@ Dragon = namedtuple('Dragon', ['suit'])
 Number = namedtuple('Number', ['suit', 'value'])
 
 
+#
+# DECK
+#
 class Deck:
     """ Class for a deck of cards """
     card_images = {}
@@ -51,7 +54,7 @@ class Deck:
 
     @staticmethod
     def save_card_image_map(fn):
-        """ Save the card images to a pickle file """
+        """ Save the card images to a pickle file. """
         if len(Deck.card_images) < 32:
             warnings.warn('Incomplete map, only {} out of 32 cards found.'.format(len(Deck.card_images)))
 
@@ -101,7 +104,9 @@ class Deck:
         raise LookupError
 
 
-# Space classes
+#
+# SPACES
+#
 class Space:
     def __init__(self, i, space=None):
         if space:
@@ -160,14 +165,16 @@ class Stacks(Space):
         return self.i*152 + 170, (len(self.cards) - count) * 31 + 309
 
 
-# Turn classes
+#
+# TURNS
+#
 class Turn:
-    """ Base turn, can be one of several types, which have different initializers """
+    """ Base turn, can be one of several types. """
     wait_duration = 0.25  # Seconds to wait while the automatic move executes (default=0.25)
 
     @staticmethod
     def generate(board):
-        """ Generate all valid turns for the given board. Generation is stopped if there is a valid automatic move. """
+        """ Generate all valid turns for the given board. Generation is stopped if there is a valid automatic turn. """
         for turn in Auto.generate(board):
             yield turn
             return
@@ -398,10 +405,12 @@ class Auto(StackMove):
                     return
 
 
-# Board class
+#
+# BOARD
+#
 class Board:
     def __init__(self, board=None):
-        """ Create the empty board, or copy the board. """
+        """ Create an empty board, or copy an existing board. """
         if board:
             # Cards are only moved, never modified, so it is ok to copy card references, and not duplicate cards
             self.stacks = [Stacks(i, space) for i, space in enumerate(board.stacks)]
@@ -416,24 +425,25 @@ class Board:
             self.free = [Free(i) for i in range(len(SUITS))]
             self.goal = [Goal(i) for i in range(len(SUITS))]
             self.flower = FlowerSpace(0)
+            self.previous_board = None
             self.turn_count = 0
             self.cards_remaining = 0
         self.turn_generator = Turn.generate(self)
         self.score = self.turn_count + self.cards_remaining
 
     def calc_score(self):
-        """ Calculate the board score, lower is better.
-            Also updates the cards remaining count.
+        """ Update the cards remaining count, then calculate the boards score.
+
+            The score is the sum of the current cost (self.turn_count), and an
+            estimate of the cost to the goal (self.cards_remaining). The estimate
+            is heavily weighted to make a greedy heuristic which solves much faster,
+            at the cost of about 5 extra moves over the ideal solutions.
         """
         self.cards_remaining = sum(len(stack.cards) for stack in self.stacks)
-        #self.score = self.turn_count + self.cards_remaining
-        self.score = self.cards_remaining
+        self.score = self.turn_count + self.cards_remaining * 4
 
     def is_solved(self):
-        """ Returns True if the board is solved. """
-        # Detects solved boards by checking if the stack columns are empty.
-        # Assuming all rules were followed, this is only true for a solved board.
-        # Must have called the score method before to update the cards remaining
+        """ Returns True if the board is solved. Must call calc_score before this to get a valid response. """
         return not self.cards_remaining
 
     def randomize(self):
@@ -461,11 +471,11 @@ class Board:
         self.flower = FlowerSpace(0)
 
     def next(self):
-        """ Get the next board generated with a move from the current board. """
+        """ Get the next board generated with a turn from the current board. """
         return next(self.turn_generator).apply(self)
 
     def space(self, space):
-        """ Get the space in the board, where the parameter space may have been from a different board """
+        """ Get the space in the current board, given a space from any board. """
         if type(space) == Stacks:
             return self.stacks[space.i]
         if type(space) == Goal:
@@ -476,7 +486,7 @@ class Board:
             return self.flower
 
     def __str__(self):
-        """ String representation of the board. """
+        """ String representation of the board """
         s = ''
         # Free spaces, if there is a stack of cards, show the number stacked
         for free in self.free:
@@ -500,7 +510,7 @@ class Board:
                 s += '[   ]'
         s += '\n'
 
-        # Main spaces
+        # Stacks
         empty = False
         row = 0
         while not empty:
@@ -562,7 +572,7 @@ class Board:
                 pass
             self.goal.append(space)
 
-        # Load the Main space cards
+        # Load the stack cards
         self.stacks = []
         for i in range(COLUMNS):
             space = Stacks(i)
@@ -578,7 +588,7 @@ class Board:
             self.stacks.append(space)
 
     def from_image(self, board_image):
-        """ Loads the board from an image of the board """
+        """ Loads the board from an image of the board. """
         # Load the free space cards.
         self.free = []
         for col in range(len(SUITS)):
@@ -613,7 +623,7 @@ class Board:
                     pass
             self.goal.append(space)
 
-        # Load the Main space cards
+        # Load the stack cards
         self.stacks = []
         for col in range(COLUMNS):
             space = Stacks(col)
@@ -650,7 +660,7 @@ class Board:
             for card in space.cards:
                 yield (card, *space.xy())
 
-        # Main spaces
+        # Stack spaces
         for space in self.stacks:
             for row, card in enumerate(space.cards):
                 yield (card, *space.xy(len(space.cards) - row))
@@ -659,7 +669,7 @@ class Board:
         return (frozenset(self.stacks),) + (frozenset(self.free),) + tuple(frozenset(self.goal),) + (self.flower,)
 
     def __lt__(self, other):
-        """ Used to order the boards in the heap by their scores, rather than their key values. """
+        """ Used to order the boards in the priority queue by their scores, rather than their key values. """
         return self.score < other.score
 
     def __eq__(self, other):
@@ -669,158 +679,132 @@ class Board:
         return hash(self.key())
 
 
+#
+# Solver
+#
 class Solve:
     """ Backtracking solver """
 
     def __init__(self, board, timeout=0):
-        """ Solve the puzzle using backtracking.
+        """ Solve the puzzle using a search with the heuristic supplied by the board calc_score() method.
 
         :param board: The board to be solved
         :param timeout: the solver timeout is seconds, if 0, will never time out
         """
-        self.board = board          # Board to be solved
-        self.timeout = 0
+        self.board = board      # Board to be solved
+        self.timeout = timeout  # Timeout in seconds
 
-        self.boards = [board]       # List of all active boards, sorted by their scores
-        self.board_cache = {board}  # Cache of all boards seen while solving
+        open_boards = [board]   # Min heap priority queue of the open boards that could lead to a solution
+        board_cache = {board}   # Cache of all boards seen while solving
 
-        self.duration = 0           # Time taken to solve the board in seconds
-        self.result = ''            # Result of the last solution attempt
-
-        board.calc_score()
-        if board.is_solved():
-            self.result = 'solved'
-            return
-
-        start_time = perf_counter()
+        start_time = process_time()
         while True:
             try:
-                # Generate the next board from the current lowest scoring board
-                board = self.boards[0].next()
-                #print('board generated, count = {}'.format(len(self.board_cache)))
-                if board not in self.board_cache:
-                    self.board_cache.add(board)
+                if board not in board_cache:
+                    board_cache.add(board)
                     board.calc_score()
-                    heappush(self.boards, board)
-                    #print('board pushed, len = {}'.format(len(self.boards)))
-
-                    scores = [(board.score, board) for board in self.boards]
-                    #print('board scores = {}'.format(str(scores)))
-                    #print('board score = {}'.format(board.score))
-                    #print('prev score = {}'.format(board.previous_board.score))
-                    #print('score = {}, remaining = {}, turns = {}'.format(board.score, board.cards_remaining, board.turn_count))
-                    #print(board)
-                    #input()
-
+                    heappush(open_boards, board)
                     if board.is_solved():
                         self.result = 'solved'
                         break
-                    if timeout and perf_counter() - start_time > timeout:
+                    if timeout and process_time() - start_time > timeout:
                         self.result = 'timed out'
                         break
+                # Get the next board from the board on top of the priority queue
+                board = open_boards[0].next()
 
             except StopIteration:
-                # If there are no more boards to generate, then pop the board and continue from the previous
-                heappop(self.boards)
-                #print('board popped, len = {}'.format(len(self.boards)))
-                if not self.boards:
-                    # If there are no more boards to pop, then the board is unsolvable.
+                # Pop the board from the priority queue if it has no more children
+                heappop(open_boards)
+                if not open_boards:
+                    # If the priority queue is empty, then the board is unsolvable.
                     self.result = 'unsolvable'
                     break
 
-        # Create the turn and board lists
-        self.boards = []
-        self.turns = []
-        try:
-            while True:
-                self.boards.append(board)
-                self.turns.append(board.turn)
-                board = board.previous_board
-        except AttributeError:
-            self.boards.reverse()
-            self.turns.reverse()
+        # Doubly link the boards from the solution back to the starting board.
+        board.next_board = None
+        self.turn_count = 0
+        while board.previous_board:
+            board.previous_board.next_board = board
+            board = board.previous_board
+            self.turn_count += 1
 
-        self.duration = perf_counter() - start_time
-
-    def prune(self):
-        """ Shorten the solution by merging and removing non-productive turns. """
-        initial_length = len(self.turns)
-
-        # Merge consecutive moves of the same card
-        i = 0
-        while i < len(self.turns) - 1:
-            if (isinstance(self.turns[i], StackMove) and
-                    isinstance(self.turns[i+1], StackMove) and
-                    type(self.turns[i].dst) == type(self.turns[i+1].src) and
-                    self.turns[i].dst.i == self.turns[i+1].src.i and
-                    self.turns[i].count == self.turns[i+1].count):
-                # print('Merged turns {} ({}) and {} ({})'.format(i, self.turns[i], i+1, self.turns[i+1]))
-                self.turns[i].dst = self.turns[i+1].dst
-                del self.turns[i+1]
-            else:
-                i += 1
-
-        # Remove pairs of moves that do not affect the board state
-        # If a card is moved, and then returns to it's state without ever having cards stacked on it
-        # or the original source, then the set of moves can be removed.
-        i = 0
-        while i < len(self.turns):
-            if isinstance(self.turns[i], StackMove):
-                src = self.turns[i].src
-                dst = self.turns[i].dst
-                count = self.turns[i].count
-                j = i + 1
-                while j < len(self.turns):
-                    if isinstance(self.turns[j], StackMove):
-                        if (type(self.turns[j].src) == type(dst) and self.turns[j].src.i == dst.i and
-                                type(self.turns[j].dst) == type(src) and self.turns[j].dst.i == src.i and
-                                self.turns[j].count == count):
-                            # print('Removed turn {}, {}'.format(i, self.turns[i]))
-                            # print('Removed turn {}, {}'.format(j, self.turns[j]))
-                            del self.turns[j]
-                            del self.turns[i]
-                            i -= 1
-                            break
-                        if ((type(self.turns[j].src) == type(dst) and self.turns[j].src.i == dst.i) or
-                                (type(self.turns[j].dst) == type(dst) and self.turns[j].dst.i == dst.i) or
-                                (type(self.turns[j].src) == type(src) and self.turns[j].src.i == src.i) or
-                                (type(self.turns[j].dst) == type(src) and self.turns[j].dst.i == src.i)):
-                            break
-                    j += 1
-            i += 1
-
-        # Repeat pruning until it passes without shortening the solution
-        if len(self.turns) < initial_length:
-            self.prune()
-        else:
-            # Rebuild the board list
-            self.boards = [self.board]
-            for turn in self.turns:
-                self.boards.append(turn.apply(self.boards[-1]))
+        self.cache_size = len(board_cache)             # Number of boards in the board cache
+        self.solve_time = process_time() - start_time  # Time to solve in seconds
+        self.exec_time = None                          # Time to execute the solution in seconds
 
     def exec(self, show=False, verify=False):
         """ Execute the solution in the game.
 
         :param show: If True, print each turn before execution
-        :param verify: If True, verify the board before execution of each move
+        :param verify: If True, verify the cards before moving
         """
-        for turn in self.turns:
+        start_time = perf_counter()
+        board = self.board
+        while board.next_board:
+            board = board.next_board
             if show:
-                print('Attempting: ' + str(turn))
-            turn.exec(verify=verify)
+                print('Attempting: ' + str(board.turn))
+            board.turn.exec(verify=verify)
+        self.exec_time = perf_counter() - start_time
 
     def print(self):
-        """ Print all the turns and boards in the solution """
+        """ Print all of the turns and boards in the solution. """
         if self.result == 'solved':
-            for i, turn in enumerate(self.turns):
-                print(self.boards[i])
-                print(i, turn)
-            if self.boards:
-                print(self.boards[-1])
-            print('Solution takes {} turns.'.format(len(self.turns)))
+            board = self.board
+            print(board)
+            i = 0
+            while board.next_board:
+                board = board.next_board
+                print(i, board.turn)
+                print(board)
+                i += 1
+            print('Solution takes {} turns.'.format(self.turn_count))
+        print('Board {} in {:.3f} seconds after {} boards tested.'.format(
+              self.result, self.solve_time, self.cache_size))
 
-        print('Board {} in {:.3f} seconds after {} boards tested'.format(
-              self.result, self.duration, len(self.board_cache)))
+
+class Stats:
+    def __init__(self):
+        self.results = Counter()
+        self.cache_sizes = []
+        self.turn_counts = []
+        self.solve_times = []
+        self.exec_times = []
+
+    def update(self, other):
+        self.results.update(other.results)
+        self.cache_sizes.extend(other.cache_sizes)
+        self.turn_counts.extend(other.turn_counts)
+        self.solve_times.extend(other.solve_times)
+        self.exec_times.extend(other.exec_times)
+
+    def add(self, solution):
+        self.results.update([solution.result])
+        self.cache_sizes.append(solution.cache_size)
+        if solution.result == 'solved':
+            self.turn_counts.append(solution.turn_count)
+        self.solve_times.append(solution.solve_time)
+        if solution.exec_time:
+            self.exec_times.append(solution.exec_time)
+
+    def __str__(self):
+        s = ''
+        for result, count in sorted(self.results.items()):
+            s += '{:12}: {:<4} ({:0.1f}%)\n'.format(result, count, 100 * count / sum(self.results.values()))
+        s += '                  Min,     Max,     Mean,   Median\n'
+        try:
+            s += 'Board cache : {:7}, {:7}, {:8.1f}, {:8.1f}\n'.format(
+                min(self.cache_sizes), max(self.cache_sizes), mean(self.cache_sizes), median(self.cache_sizes))
+            s += 'Turns       : {:7}, {:7}, {:8.1f}, {:8.1f}\n'.format(
+                min(self.turn_counts), max(self.turn_counts), mean(self.turn_counts), median(self.turn_counts))
+            s += 'Solve time  :{:7.3f}s,{:7.3f}s, {:7.3f}s, {:7.3f}s\n'.format(
+                min(self.solve_times), max(self.solve_times), mean(self.solve_times), median(self.solve_times))
+            s += 'Exec time   :{:7.3f}s,{:7.3f}s, {:7.3f}s, {:7.3f}s\n'.format(
+                min(self.exec_times), max(self.exec_times), mean(self.exec_times), median(self.exec_times))
+        except ValueError:
+            pass
+        return s
 
 
 class Tests(unittest.TestCase):
@@ -891,68 +875,76 @@ class Tests(unittest.TestCase):
 
 
 if __name__ == '__main__':
-    """ Randomly generate boards, then solve them """
-    from statistics import mean
-    from collections import Counter
+    """ Randomly generate boards, then solve them. Uses multiprocessing to speed up. """
+    from multiprocessing import Queue, Process, queues
 
-    if False:
-        seed(47)
-        board = Board()
-        board.randomize()
-        cProfile.run('Solve(board)')
-        exit()
+    # Number of processors
+    nprocs = 4
 
-    seeds = range(5)
-    #seeds = [1, 2, 3, 4, 5, 6, 7, 9]
-    #seeds = [1]
+    # Seeds to test
+    seeds = range(100)
 
-    results = Counter()
-    turns = []
-    pruned = []
-    time = []
-    boards = []
-
+    seed_q = Queue()
     for i in seeds:
-        # randomize
-        seed(i)
-        board = Board()
-        board.randomize()
+        seed_q.put(i)
 
-        # solve
-        solution = Solve(board)
+    def worker(id, seed_q, result_q):
+        try:
+            while True:
+                try:
+                    i = seed_q.get_nowait()
+                except queues.Empty:
+                    break
 
-        # prune
-        initial_turns = len(solution.turns)
-        solution.prune()
-        pruned_turns = initial_turns - len(solution.turns)
+                # Randomize
+                seed(i)
+                board = Board()
+                board.randomize()
 
-        # save stats
-        results.update([solution.result])
-        time.append(solution.duration)
-        boards.append(len(solution.board_cache))
-        if solution.result == 'solved':
-            turns.append(len(solution.turns))
-            pruned.append(pruned_turns)
+                # Solve
+                solution = Solve(board, timeout=10)
 
-        # print the solution
-        #solution.print()
+                # Print the solution for debugging
+                #solution.print()
 
-        print('Seed {} {} in {:.3f} seconds after {} boards tested, takes {} moves, {} pruned'.format(
-                i, solution.result, solution.duration, len(solution.board_cache), len(solution.turns), pruned_turns))
+                # Print stats
+                print('Worker {}: seed {} {} in {:.3f} seconds after {} boards tested, takes {} moves'.format(
+                      id, i, solution.result, solution.solve_time, solution.cache_size, solution.turn_count))
 
-    # Print the stats
-    print()
-    for result, count in results.items():
-        print('{:12}: {:<4} ({:0.1f}%)'.format(result, count, 100 * count / sum(results.values())))
-    try:
-        print('Boards seen : min {}, max {}, avg {}'.format(
-            min(boards), max(boards), mean(boards)))
-        print('Turns       : min {}, max {}, avg {}'.format(
-            min(turns), max(turns), mean(turns)))
-        print('Turns pruned: min {}, max {}, avg {}'.format(
-            min(pruned), max(pruned), mean(pruned)))
-        print('Solve time  : min {:0.3f}s, max {:0.3f}s, avg {:0.3f}s'.format(
-            min(time), max(time), mean(time)))
-    except ValueError:
-        print('No Data')
-    print()
+                # Save solution stats
+                stats = Stats()
+                stats.add(solution)
+                result_q.put(stats)
+        except KeyboardInterrupt:
+            pass
+
+    # Start the worker processes
+    result_q = Queue()
+    procs = []
+    start_time = perf_counter()
+    for i in range(nprocs):
+        p = Process(target=worker,
+                    args=(i, seed_q, result_q))
+        procs.append(p)
+        p.start()
+
+    # Wait for all worker processes to finish
+    for p in procs:
+        try:
+            p.join()
+        except KeyboardInterrupt:
+            pass
+    elapsed_time = perf_counter() - start_time
+
+    # Merge the stats from all workers
+    stats = Stats()
+    while True:
+        try:
+            stats.update(result_q.get_nowait())
+        except queues.Empty:
+            break
+
+    # Print the summary stats
+    print('\n' + str(stats))
+    print('Total elapsed time: {:0.3f}s'.format(elapsed_time))
+    print('Process count: {}'.format(nprocs))

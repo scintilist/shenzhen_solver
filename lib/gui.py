@@ -1,4 +1,8 @@
+import gi
+gi.require_version('Gtk', '3.0')
+gi.require_version('Wnck', '3.0')
 from gi.repository import Gtk, Wnck
+
 import pyautogui
 from time import sleep, time
 
@@ -12,7 +16,7 @@ sleep_duration = 0.0  # Time to sleep after each mouse move (default=0.0)
 
 
 def vector_sum(*args):
-    """ Add vectors of equal length, used to add xy coordinates together
+    """ Add vectors of equal length, used to add xy coordinates together.
 
     :param args: list of vectors to add together
     :return: vector sum of all args
@@ -21,7 +25,7 @@ def vector_sum(*args):
 
 
 def distance(a, b):
-    """ Return the distance between points a and b """
+    """ Return the distance between points a and b. """
     return sum(map(lambda x, y: (x - y) ** 2, a, b)) ** 0.5
 
 
@@ -56,7 +60,7 @@ def click():
 
 
 def find_window():
-    """ Find the SHENZHEN I/O Window and bring it to the front """
+    """ Find the SHENZHEN I/O Window and bring it to the front. """
     global window
     window = None
 
@@ -74,27 +78,27 @@ def find_window():
 
 
 def get_window_xy():
-    """ Get the x,y coordinates of the top left corner of the shenzhen solitare game window """
+    """ Get the x,y coordinates of the top left corner of the shenzhen solitare game window. """
     xp, yp, width, height = window.get_client_window_geometry()
     return xp, yp
 
 
 def get_board_image():
-    """ Get an image of the shenzhen solitare game board """
+    """ Get an image of the shenzhen solitare game board. """
     xp, yp, width, height = window.get_client_window_geometry()
     image = pyautogui.screenshot()
     return image.crop((xp, yp, xp + width, yp + height))
 
 
 def get_card_image(image, x,y):
-    """ Crop the board image to the 20 x 20 pixel card image at the given xy coordinates """
+    """ Crop the board image to the 20 x 20 pixel card image at the given xy coordinates. """
     return image.crop((x, y, x + 20, y + 20))
 
 
 def correlation(im1, im2):
-    """ Calculate the correlation between the 2 PIL images
-        The correlation is 1 - normalized pixel rms error
-        A white image and black image have a correlation of 0, and identical images have a correlation of 1
+    """ Calculate the correlation between the 2 PIL images.
+        The correlation is 1 - normalized pixel rms error.
+        A white image and black image have a correlation of 0, and identical images have a correlation of 1.
     """
     if im1.size != im2.size or im1.mode != im2.mode:
         raise ValueError('Images are different sizes.')

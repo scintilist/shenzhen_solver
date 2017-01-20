@@ -1,40 +1,17 @@
-""" This script solves the Shenzhen solitare game in real time, using pyautogui to move the mouse and click """
+""" This script solves the Shenzhen solitare game, using pyautogui to move the mouse and click.
+    To use:
+    1) Run SHENZHEN I/O solitare in a window at 1440x900 resolution (make sure the window is within the screen border)
+    2) Run this script, it will bring the solitare window into focus if it is in the background
+    3) Games will be solved continuously until the script is killed, or the mouse is moved while a solution is executing
 
+"""
 from time import sleep, perf_counter
-from collections import Counter
-from statistics import mean
 
-from lib.solver import Solve, Board, Deck
+from lib.solver import Solve, Board, Deck, Stats
 from lib import gui
 
-# Maximum time to attempt the solution before giving up
-TIMEOUT = 15.0
-
-# Maximum number of turns in a solution to execute
-MAX_TURNS = 200
-
-
-# Statistics
-results = Counter()
-exec_times = []
-turns = []
-solve_times = []
-
-
-def print_stats():
-    print()
-    for result, count in results.items():
-        print('{:12}: {:4} ({:0.1f}%)'.format(result, count, 100 * count / sum(results.values())))
-    try:
-        print('Turns:      min {}, max {}, avg {}'.format(
-            min(turns), max(turns), mean(turns)))
-        print('Exec time:  min {:0.1f}s, max {:0.1f}s, avg {:0.1f}s'.format(
-            min(exec_times), max(exec_times), mean(exec_times)))
-        print('Solve time: min {:0.3f}s, max {:0.3f}s, avg {:0.3f}s'.format(
-            min(solve_times), max(solve_times), mean(solve_times)))
-    except ValueError:
-        print('No Data')
-    print()
+# Maximum time to attempt the solution before giving up and getting a new board
+TIMEOUT = 10.0
 
 
 def get_board():
@@ -56,40 +33,30 @@ def get_board():
 
 if __name__ == '__main__':
     """ Solve boards repeatedly. Print some basic stats. """
+    start_time = perf_counter()
+
     # Load the card image map
     Deck.load_card_image_map('card_image_data/card_images.p')
 
+    stats = Stats()
+    sleep(1)
     while True:
-        print_stats()
-
         # Get a new board to solve
         board = get_board()
         print(board)
 
-        # Solve the board, if it can be done withing the constraints set
+        # Calculate solution
         solution = Solve(board, timeout=TIMEOUT)
 
-        if solution.result != 'solved':
-            results.update([solution.result])
-            print('Not solved.')
-            continue
-
-        solution.prune()
-        if len(solution.turns) > MAX_TURNS:
-            results.update(['max turns'])
-            print('Max turns exceeded. turns = {}'.format(len(solution.turns)))
-            continue
-
-        print('Solved. Takes {} turns.'.format(len(solution.turns)))
-
-        turns.append(len(solution.turns))
-        solve_times.append(solution.duration)
-        results.update([solution.result])
-
         # Execute the solution
-        exec_start = perf_counter()
-        solution.exec(show=False, verify=False)
-        exec_time = perf_counter() - exec_start
-        exec_times.append(exec_time)
+        if solution.result == 'solved':
+            print('Solved in {} turns.'.format(solution.turn_count))
+            solution.exec(show=False, verify=False)
+            print('Solution executed in {:.3f} seconds'.format(solution.exec_time))
 
-        print('Solution executed in {:.3f} seconds'.format(exec_time))
+        # Show stats
+        stats.add(solution)
+        print(stats)
+
+        elapsed_time = perf_counter() - start_time
+        print('Total elapsed time: {:0.3f}s'.format(elapsed_time))
