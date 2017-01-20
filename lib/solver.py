@@ -201,7 +201,7 @@ class CollectDragons(Turn):
 
         :param verify: No effect
         """
-        gui.move_to(*CollectDragons.button_xy[self.dst.cards[-1].suit])
+        gui.move_to(*CollectDragons.button_xy[self.srcs[0].cards[-1].suit])
         gui.click()
         sleep(Turn.wait_duration)
 
@@ -226,16 +226,20 @@ class CollectDragons(Turn):
         :param board:
         :yield turn: Yields all dragon turns valid for the board
         """
+        suits = {}
         for dst in board.free:
-            if len(dst.cards) == 1:
-                if isinstance(dst.cards[-1], Dragon):
-                    suit = dst.cards[-1].suit
-                    srcs = []
-                    for space in board.stacks + board.free:
-                        if space.cards and isinstance(space.cards[-1], Dragon) and space.cards[-1].suit == suit:
-                            srcs.append(space)
-                    if len(srcs) == DRAGONS:
-                        yield CollectDragons(dst, srcs)
+            if not dst.cards:
+                suits.update({suit: dst for suit in SUITS if suit not in suits})
+            elif isinstance(dst.cards[-1], Dragon):
+                suits[dst.cards[-1].suit] = dst
+
+        for suit, dst in suits.items():
+            srcs = []
+            for space in board.stacks + board.free:
+                if space.cards and isinstance(space.cards[-1], Dragon) and space.cards[-1].suit == suit:
+                    srcs.append(space)
+            if len(srcs) == DRAGONS:
+                yield CollectDragons(dst, srcs)
 
 
 class StackMove(Turn):
