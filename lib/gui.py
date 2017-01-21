@@ -1,10 +1,12 @@
 import gi
 gi.require_version('Gtk', '3.0')
 gi.require_version('Wnck', '3.0')
-from gi.repository import Gtk, Wnck
+from gi.repository import Gtk, Gdk, Wnck
 
 import pyautogui
 from time import sleep, time
+from PIL import Image
+import numpy as np
 
 # Minimum game window resolution
 min_width = 1440
@@ -90,9 +92,17 @@ def get_board_xy():
 
 def get_board_image():
     """ Get an image of the shenzhen solitare game board. """
-    image = pyautogui.screenshot()
-    xp, yp = get_board_xy()
-    return image.crop((xp, yp, xp + min_width, yp + min_height))
+    w = Gdk.get_default_root_window()
+    pixel_buffer = Gdk.pixbuf_get_from_window(w, *get_board_xy(), min_width, min_height)
+    return Image.frombuffer(
+        "RGB",
+        (min_width, min_height),
+        pixel_buffer.get_pixels(),
+        "raw",
+        "RGB",
+        pixel_buffer.get_rowstride(),
+        1
+    )
 
 
 def get_card_image(image, x, y):
@@ -104,16 +114,18 @@ def correlation(im1, im2):
     """ Calculate the correlation between the 2 PIL images.
         The correlation is 1 - normalized pixel rms error.
         A white image and black image have a correlation of 0, and identical images have a correlation of 1.
-        Only compares 1 in 4 pixels for faster performance.
+        uses numpy to speed up (~ 10x faster than naively iterating over the pixel data)
     """
     if im1.size != im2.size or im1.mode != im2.mode:
         raise ValueError('Images are different sizes.')
+    im1 = np.frombuffer(im1.tobytes(), np.uint8)
+    im2 = np.frombuffer(im2.tobytes(), np.uint8)
 
-    square_error_sum = 0
-    im1_data = im1.tobytes()
-    im2_data = im2.tobytes()
-    for i in range(0, len(im1_data), 4):
-        square_error_sum += (im1_data[i] - im2_data[i])**2
-    mean_square_error = square_error_sum / (len(im1_data)/4)
-    rms_norm = mean_square_error ** 0.5 / 255
-    return 1 - rms_norm
+    # Convert to 32-bit ints
+    im1 = im1.astype(np.int32)
+    im2 = im2.astype(np.int32)
+
+    # Calculate RMS error
+    error = np.subtract(im1, im2)
+    rms_error = np.mean(np.square(error))**0.5 / 255
+    return 1 - rms_error
