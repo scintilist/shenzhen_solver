@@ -9,9 +9,7 @@ from time import sleep, perf_counter
 from lib.solver import Solve, Board, Deck, Stats
 from lib import gui
 import traceback
-
-# Maximum time to attempt the solution before giving up and getting a new board
-TIMEOUT = 10.0
+import argparse
 
 
 def get_board():
@@ -24,47 +22,59 @@ def get_board():
     gui.click()
     sleep(4)
 
-    # Load the board from the image, loop until the board is completely dealt, or it times out after 10 tries
-    for i in range(10):
+    # Load the board from the image, loop until the board is completely dealt, or it times out after 50 tries
+    for i in range(50):
         board = Board()
-        board.from_image(gui.get_board_image())
+        image = gui.get_board_image()
+        board.from_image(image)
         if board.is_complete():
-            return board
-        sleep(0.2)
+            return board, image
+        sleep(0.1)
     raise RuntimeError('Could not find a complete board.')
+
 
 if __name__ == '__main__':
     """ Solve boards repeatedly. Print some basic stats. """
-    start_time = perf_counter()
+
+    # Parse arguments
+    parser = argparse.ArgumentParser(description='Run the Shenzhen I/O Solitaire auto solver.')
+    parser.add_argument('--verify', '-v', action='store_true',
+                        help='Verify cards before and after each move. Enabling slows execution by ~10%%.')
+    parser.add_argument('--timeout', '-t', action='store', default=10, type=float,
+                        help='Set the solver timeout in seconds, default=10')
+    args = parser.parse_args()
 
     # Load the card image map
     Deck.load_card_image_map('card_image_data/card_images.p')
 
     stats = Stats()
     sleep(1)
+    start_time = perf_counter()
     try:
         while True:
             # Get a new board to solve
-            board = get_board()
+            board, image = get_board()
             print(board)
 
-            # Calculate solution
-            solution = Solve(board, timeout=TIMEOUT)
+            # Find the solution
+            print('Solving...')
+            solution = Solve(board, timeout=args.timeout)
 
             # Execute the solution
             if solution.result == 'solved':
                 print('Solution takes {} turns.'.format(solution.turn_count))
-                solution.exec(show=False, verify=False)
-                print('Solution executed in {:.3f} seconds'.format(solution.exec_time))
+                solution.exec(show=False, verify=args.verify, win_count=gui.win_count(image))
+                print('Solution executed in {:.3f} seconds\n'.format(solution.exec_time))
 
-            if solution.result == 'exec failed':
-                print('Board solution execution failed to produce a solved board.')
+                if solution.result == 'exec failed':
+                    print('Board win count did not increase after execution.')
 
             # Show stats
             stats.add(solution)
 
             print(stats)
             print('Total elapsed time: {:0.3f}s'.format(perf_counter() - start_time))
+            print()
     except:
         traceback.print_exc()
         print(stats)

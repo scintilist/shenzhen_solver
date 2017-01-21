@@ -16,15 +16,22 @@ The auto solver script can be halted by moving the mouse during the execution of
 
 ### Prerequisites
 
-Requires Python 3 with pyautogui and gi
+Requires Python 3 with pyautogui, gi, and numpy
 
 ```
 >sudo apt-get install python3-gi
 >sudo pip3 install pyautogui
+>sudo pip3 install numpy
 ```
 
 GUI automation is Linux only, due to the use of Wnck to find the game window.
 
+Optional win count tracking can be enabled by installing the module [tesserocr](https://pypi.python.org/pypi/tesserocr).
+```
+>sudo apt-get install tesseract-ocr libtesseract-dev libleptonica-dev
+>sudo pip3 install cython
+>sudo pip3 install tesserocr
+```
 ## Authors
 
 * **Kyle Smith** - *Initial work*

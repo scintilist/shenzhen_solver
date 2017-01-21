@@ -103,6 +103,25 @@ class Deck:
                 return copy(card)
         raise LookupError
 
+    @staticmethod
+    def assert_card_at(card, x, y):
+        fails = 0
+        while True:
+            try:
+                card_image = gui.get_card_image(gui.get_board_image(), x, y)
+                try:
+                    gui_card = Deck.card_from_image(card_image)
+                    if card != gui_card:
+                        raise RuntimeError('{} found at ({},{}), expected {}'.format(gui_card, x, y, card))
+                except LookupError:
+                    raise RuntimeError('No card found at ({},{}), expected {}'.format(x, y, card))
+                break
+            except RuntimeError:
+                fails += 1
+                if fails == 5:
+                    raise
+            sleep(0.1)
+
 
 #
 # SPACES
@@ -152,7 +171,7 @@ class FlowerSpace(Space):
 
 class Goal(Space):
     def xy(self, count=0):
-        return self.i*152 + 930, 45
+        return self.i*152 + 930, 45 - (len(self.cards) - count)
 
 
 class Free(Space):
@@ -170,7 +189,6 @@ class Stacks(Space):
 #
 class Turn:
     """ Base turn, can be one of several types. """
-    wait_duration = 0.25  # Seconds to wait while the automatic move executes (default=0.25)
 
     @staticmethod
     def generate(board):
@@ -187,6 +205,7 @@ class Turn:
 class CollectDragons(Turn):
     """ Dragon collection turns. """
     button_xy = {'R': (648, 66), 'G': (648, 150), 'B': (648, 234)}
+    wait_time = 0.3  # Seconds to wait while the dragons collect (default=0.3)
 
     def __init__(self, dst, srcs):
         """ Create the turn
@@ -201,9 +220,18 @@ class CollectDragons(Turn):
 
         :param verify: No effect
         """
+        # Verify the source cards
+        if verify:
+            for src in self.srcs:
+                Deck.assert_card_at(src.cards[-1], *src.xy(1))
+
         gui.move_to(*CollectDragons.button_xy[self.srcs[0].cards[-1].suit])
         gui.click()
-        sleep(Turn.wait_duration)
+        sleep(CollectDragons.wait_time)
+
+        # Verify the destination card (suit-less dragon), try 5 times before giving up
+        if verify:
+            Deck.assert_card_at(Dragon(' '), *self.dst.xy(0))
 
     def apply(self, board):
         """ Run the turn on the given board to generate the next board
@@ -267,14 +295,9 @@ class StackMove(Turn):
         start = gui.vector_sum(self.src.xy(self.count), StackMove.click_offset)
         gui.move_to(*start)
 
+        # Verify the source card
         if verify:
-            # Verify the card
-            card_image = gui.get_card_image(gui.get_board_image(), *self.src.xy(self.count))
-            try:
-                if self.src.cards[-self.count] != Deck.card_from_image(card_image):
-                    raise LookupError
-            except LookupError:
-                raise RuntimeError('Drag move source card does not match the expected card image.')
+            Deck.assert_card_at(self.src.cards[-self.count], *self.src.xy(self.count))
 
         # Verify the mouse position
         if pyautogui.position() != gui.absolute(start):
@@ -283,6 +306,10 @@ class StackMove(Turn):
         # Drag the card
         end = gui.vector_sum(self.dst.xy(0), StackMove.click_offset)
         gui.drag_to(*end)
+
+        # Verify the destination card, try 5 times before giving up
+        if verify:
+            Deck.assert_card_at(self.src.cards[-self.count], *self.dst.xy(0))
 
     def apply(self, board):
         """ Run the turn on the given board to generate the next board
@@ -369,13 +396,14 @@ class Auto(StackMove):
     """ Automatic turns that do not require a mouse action.
         This includes moving the flower to the flower space, or balanced consecutive moves to the goal spaces.
     """
+    wait_time = 0.25  # Seconds to wait while the automatic turn executes (default=0.25)
 
     def exec(self, verify=False):
         """ Execute the gui actions to bring the board to the next turn.
 
         :param verify: No effect
         """
-        sleep(Turn.wait_duration)
+        sleep(Auto.wait_time)
 
     def __str__(self):
         return 'Move {} cards from {} to {} (Automatic)'.format(self.count, self.src, self.dst)
@@ -505,46 +533,79 @@ class Board:
         if type(space) == FlowerSpace:
             return self.flower
 
-    def __str__(self):
-        """ String representation of the board """
-        s = ''
-        # Free spaces, if there is a stack of cards, show the number stacked
-        for free in self.free:
-            try:
-                s += '[' + Deck.card_to_str(free.cards[-1])
-                s += ']' if len(free.cards) == 1 else str(len(free.cards))
-            except IndexError:
-                s += '[   ]'
+    def card_coordinates(self):
+        """ Generator that yields all visible cards in the board along with their screen coordinate offsets. """
+        # Free, goal, and flower spaces
+        for space in self.free + self.goal + [self.flower]:
+            for card in space.cards:
+                yield (card, *space.xy())
 
-        # Flower space
+        # Stack spaces
+        for space in self.stacks:
+            for row, card in enumerate(space.cards):
+                yield (card, *space.xy(len(space.cards) - row))
+
+    def from_image(self, board_image):
+        """ Loads the board from an image of the board. """
+        # Load the free space cards.
+        self.free = []
+        for col in range(len(SUITS)):
+            space = Free(col)
+            try:
+                space.append(Deck.card_from_image(gui.get_card_image(board_image, *space.xy())))
+            except LookupError:
+                pass
+            self.free.append(space)
+
+        # Load the flower space card
+        self.flower = FlowerSpace(0)
         try:
-            s += '  [' + Deck.card_to_str(self.flower.cards[-1]) + ']   '
-        except IndexError:
-            s += '  [   ]   '
+            self.flower.append(Deck.card_from_image(gui.get_card_image(board_image, *self.flower.xy())))
+        except LookupError:
+            pass
 
-        # Goal spaces
-        for goal in self.goal:
-            try:
-                s += '[' + Deck.card_to_str(goal.cards[-1]) + ']'
-            except IndexError:
-                s += '[   ]'
-        s += '\n'
-
-        # Stacks
-        empty = False
-        row = 0
-        while not empty:
-            empty = True
-            for stack in self.stacks:
+        # Load the goal cards.
+        self.goal = []
+        for col in range(len(SUITS)):
+            space = Goal(col)
+            for i in range(9):
                 try:
-                    s += '[' + Deck.card_to_str(stack.cards[row]) + ']'
-                except IndexError:
-                    s += '     '
-                else:
-                    empty = False
-            row += 1
-            s += '\n'
-        return s
+                    card = Deck.card_from_image(gui.get_card_image(board_image, *space.xy(-i)))
+                    for value in range(1, card.value + 1):
+                        space.append(Number(card.suit, value))
+                    break
+                except LookupError:
+                    pass
+            self.goal.append(space)
+
+        # Load the stack cards
+        self.stacks = []
+        for col in range(COLUMNS):
+            space = Stacks(col)
+            try:
+                while True:
+                    space.append(Deck.card_from_image(gui.get_card_image(board_image, *space.xy())))
+            except (LookupError, IndexError):
+                pass
+            self.stacks.append(space)
+
+        # Replace dragon stack placeholder cards in the free spaces with the stacks of dragons
+        for suit in SUITS:
+            # Count visible dragons of the suit (only need to check the stack area and free spaces
+            count = 0
+            for space in self.stacks + self.free:
+                for card in space.cards:
+                    if isinstance(card, Dragon) and card.suit == suit:
+                        count += 1
+
+            # If there are missing dragons, replace the first suit-less free space dragon with them
+            if count < DRAGONS:
+                for col, space in enumerate(self.free):
+                    if space.cards and isinstance(space.cards[-1], Dragon) and space.cards[-1].suit not in SUITS:
+                        self.free[col] = Free(col)
+                        for i in range(DRAGONS):
+                            self.free[col].append(Dragon(suit))
+                        break
 
     def from_string(self, string):
         """ Loads the board from a string representation. """
@@ -607,83 +668,47 @@ class Board:
                 pass
             self.stacks.append(space)
 
-    def from_image(self, board_image):
-        """ Loads the board from an image of the board. """
-        # Load the free space cards.
-        self.free = []
-        for col in range(len(SUITS)):
-            space = Free(col)
-            x, y = space.xy()
+    def __str__(self):
+        """ String representation of the board """
+        s = ''
+        # Free spaces, if there is a stack of cards, show the number stacked
+        for free in self.free:
             try:
-                space.append(Deck.card_from_image(gui.get_card_image(board_image, x, y)))
-            except LookupError:
-                pass
-            self.free.append(space)
+                s += '[' + Deck.card_to_str(free.cards[-1])
+                s += ']' if len(free.cards) == 1 else str(len(free.cards))
+            except IndexError:
+                s += '[   ]'
 
-        # Load the flower space card
-        self.flower = FlowerSpace(0)
+        # Flower space
         try:
-            x, y = self.flower.xy()
-            self.flower.append(Deck.card_from_image(gui.get_card_image(board_image, x, y)))
-        except LookupError:
-            pass
+            s += '  [' + Deck.card_to_str(self.flower.cards[-1]) + ']   '
+        except IndexError:
+            s += '  [   ]   '
 
-        # Load the goal cards.
-        self.goal = []
-        for col in range(len(SUITS)):
-            space = Goal(col)
-            x, y = space.xy()
-            for shift in range(0, -9, -1):
-                try:
-                    card = Deck.card_from_image(gui.get_card_image(board_image, x, y+shift))
-                    for value in range(1, card.value + 1):
-                        space.append(Number(card.suit, value))
-                    break
-                except LookupError:
-                    pass
-            self.goal.append(space)
-
-        # Load the stack cards
-        self.stacks = []
-        for col in range(COLUMNS):
-            space = Stacks(col)
+        # Goal spaces
+        for goal in self.goal:
             try:
-                while True:
-                    x, y = space.xy()
-                    space.append(Deck.card_from_image(gui.get_card_image(board_image, x, y)))
-            except (LookupError, IndexError):
-                pass
-            self.stacks.append(space)
+                s += '[' + Deck.card_to_str(goal.cards[-1]) + ']'
+            except IndexError:
+                s += '[   ]'
+        s += '\n'
 
-        # Replace dragon stack placeholder cards in the free spaces with the stacks of dragons
-        for suit in SUITS:
-            # Count visible dragons of the suit (only need to check the stack area and free spaces
-            count = 0
-            for space in self.stacks + self.free:
-                for card in space.cards:
-                    if isinstance(card, Dragon) and card.suit == suit:
-                        count += 1
-
-            # If there are missing dragons, replace the first suitless free space dragon with them
-            if count < DRAGONS:
-                for col, space in enumerate(self.free):
-                    if space.cards and isinstance(space.cards[-1], Dragon) and space.cards[-1].suit not in SUITS:
-                        self.free[col] = Free(col)
-                        for i in range(DRAGONS):
-                            self.free[col].append(Dragon(suit))
-                        break
-
-    def card_coordinates(self):
-        """ Generator that yields all visible cards in the board along with their screen coordinate offsets. """
-        # Free, goal, and flower spaces
-        for space in self.free + self.goal + [self.flower]:
-            for card in space.cards:
-                yield (card, *space.xy())
-
-        # Stack spaces
-        for space in self.stacks:
-            for row, card in enumerate(space.cards):
-                yield (card, *space.xy(len(space.cards) - row))
+        # Stacks
+        empty = False
+        row = 0
+        while not empty:
+            empty = True
+            for stack in self.stacks:
+                try:
+                    s += '[' + Deck.card_to_str(stack.cards[row]) + ']'
+                except IndexError:
+                    s += '     '
+                else:
+                    empty = False
+            row += 1
+            s += '\n'
+        s = s.rsplit('\n', 2)[0]
+        return s
 
     def key(self):
         return (frozenset(self.stacks),) + (frozenset(self.free),) + tuple(frozenset(self.goal),) + (self.flower,)
@@ -752,12 +777,14 @@ class Solve:
         self.cache_size = len(board_cache)             # Number of boards in the board cache
         self.solve_time = process_time() - start_time  # Time to solve in seconds
         self.exec_time = None                          # Time to execute the solution in seconds
+        self.win_count = None                          # Win count after solution execution
 
-    def exec(self, show=False, verify=False):
+    def exec(self, show=False, verify=False, win_count=None):
         """ Execute the solution in the game.
 
         :param show: If True, print each turn before execution
         :param verify: If True, verify the cards before moving
+        :param win_count: Win count before starting the solution execution
         """
         start_time = perf_counter()
         board = self.board
@@ -768,19 +795,15 @@ class Solve:
             board.turn.exec(verify=verify)
         self.exec_time = perf_counter() - start_time
 
-        # Verify the board has been solved by watching for the movement of the flower card
-        if verify:
-            try:
-                Deck.card_from_image(gui.get_card_image(gui.get_board_image(), *FlowerSpace(0).xy()))
-            except LookupError:
-                pass  # fail
-            else:
-                sleep(1)  # Wait for the auto clearing of the board to move the flower card
-                try:
-                    Deck.card_from_image(gui.get_card_image(gui.get_board_image(), *FlowerSpace(0).xy()))
-                except LookupError:
-                    return  # success
-            self.result = 'exec failed'
+        # Verify that the win count increased if it exists
+        if win_count is None:
+            return
+        for i in range(10):
+            self.win_count = gui.win_count(gui.get_board_image())
+            if self.win_count > win_count:
+                return
+            sleep(0.1)
+        self.result = 'exec failed'
 
     def print(self):
         """ Print all of the turns and boards in the solution. """
@@ -805,6 +828,7 @@ class Stats:
         self.turn_counts = []
         self.solve_times = []
         self.exec_times = []
+        self.win_counts = []
 
     def update(self, other):
         self.results.update(other.results)
@@ -812,15 +836,17 @@ class Stats:
         self.turn_counts.extend(other.turn_counts)
         self.solve_times.extend(other.solve_times)
         self.exec_times.extend(other.exec_times)
+        self.win_counts.extend(other.win_counts)
 
     def add(self, solution):
         self.results.update([solution.result])
         self.cache_sizes.append(solution.cache_size)
-        if solution.result == 'solved':
+        if solution.result in ('solved', 'exec failed'):
             self.turn_counts.append(solution.turn_count)
         self.solve_times.append(solution.solve_time)
         if solution.exec_time:
             self.exec_times.append(solution.exec_time)
+        self.win_counts.append(solution.win_count)
 
     def __str__(self):
         s = ''
@@ -836,6 +862,7 @@ class Stats:
                 min(self.solve_times), max(self.solve_times), mean(self.solve_times), median(self.solve_times))
             s += 'Exec time   :{:7.3f}s,{:7.3f}s, {:7.3f}s, {:7.3f}s\n'.format(
                 min(self.exec_times), max(self.exec_times), mean(self.exec_times), median(self.exec_times))
+            s += 'Win Count: {}'.format(self.win_counts[-1])
         except ValueError:
             pass
         return s

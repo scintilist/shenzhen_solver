@@ -5,8 +5,13 @@ from gi.repository import Gtk, Gdk, Wnck
 
 import pyautogui
 from time import sleep, time
-from PIL import Image
+from PIL import ImageEnhance, Image
 import numpy as np
+
+try:
+    from tesserocr import PyTessBaseAPI, PSM, RIL, iterate_level, iterate_choices
+except ImportError:
+    print('Install the module "tesserocr" to show win counts.')
 
 # Minimum game window resolution
 min_width = 1440
@@ -16,7 +21,7 @@ min_height = 900
 window = None
 
 # Mouse movement settings
-speed = 50000  # Mouse move speed in pixels/second (default=5000)
+speed = 50000  # Mouse move speed in pixels/second (default=50000)
 min_time = 0.1  # Minimum mouse move time in seconds (default=0.1)
 sleep_duration = 0.0  # Time to sleep after each mouse move (default=0.0)
 
@@ -129,3 +134,25 @@ def correlation(im1, im2):
     error = np.subtract(im1, im2)
     rms_error = np.mean(np.square(error))**0.5 / 255
     return 1 - rms_error
+
+
+def win_count(im):
+    """ Get the win count from the board image. """
+    try:
+        im = im.crop((250, 845, 330, 862))
+        im = ImageEnhance.Brightness(im).enhance(0.5)
+        im = ImageEnhance.Contrast(im).enhance(5)
+        im = im.resize((n*4 for n in im.size), Image.ANTIALIAS)
+        with PyTessBaseAPI(psm=PSM.SINGLE_LINE) as api:
+            api.SetImage(im)
+            api.Recognize()
+            counter_text = ''
+            for symbol in iterate_level(api.GetIterator(), RIL.SYMBOL):
+                for choice in iterate_choices(symbol.GetChoiceIterator()):
+                    choice_text = choice.GetUTF8Text()
+                    if choice_text.isdigit():
+                        counter_text += choice_text
+                        break
+        return int(counter_text)
+    except NameError:
+        return None
