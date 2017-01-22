@@ -791,7 +791,7 @@ class Solve:
         while board.next_board:
             board = board.next_board
             if show:
-                print('Attempting: ' + str(board.turn))
+                print('{}) {}'.format(board.turn_count, board.turn))
             board.turn.exec(verify=verify)
         self.exec_time = perf_counter() - start_time
 
@@ -809,16 +809,11 @@ class Solve:
         """ Print all of the turns and boards in the solution. """
         if self.result == 'solved':
             board = self.board
-            print(board)
-            i = 0
             while board.next_board:
                 board = board.next_board
-                print(i, board.turn)
-                print(board)
-                i += 1
-            print('Solution takes {} turns.'.format(self.turn_count))
-        print('Board {} in {:.3f} seconds after {} boards tested.'.format(
-              self.result, self.solve_time, self.cache_size))
+                print('{})'.format(board.turn_count))
+                print(board.turn)
+                print(board, end='\n\n')
 
 
 class Stats:
@@ -848,22 +843,27 @@ class Stats:
             self.exec_times.append(solution.exec_time)
         self.win_counts.append(solution.win_count)
 
+    @staticmethod
+    def _list_stats(data, data_name, format_string):
+        try:
+            s = '{0:12}:{1},{1},{1},{1}\n'.format(data_name, format_string)
+            s = s.format(min(data), max(data), mean(data), median(data))
+        except ValueError:
+            s = '{0:12}:{1:>{2}},{1:>{2}},{1:>{2}},{1:>{2}}\n'.format(data_name, 'N/A', len(format_string.format(0)))
+        return s
+
     def __str__(self):
         s = ''
         for result, count in sorted(self.results.items()):
             s += '{:12}: {:<4} ({:0.1f}%)\n'.format(result, count, 100 * count / sum(self.results.values()))
-        s += '                  Min,     Max,     Mean,   Median\n'
+        s += '                   Min,      Max,     Mean,   Median\n'
+        s += self._list_stats(self.cache_sizes, 'Board cache', '{:9.1f}')
+        s += self._list_stats(self.turn_counts, 'Turns      ', '{:9.1f}')
+        s += self._list_stats(self.solve_times, 'Solve time', '{:8.3f}s')
+        s += self._list_stats(self.exec_times, 'Exec time', '{:8.3f}s')
         try:
-            s += 'Board cache : {:7}, {:7}, {:8.1f}, {:8.1f}\n'.format(
-                min(self.cache_sizes), max(self.cache_sizes), mean(self.cache_sizes), median(self.cache_sizes))
-            s += 'Turns       : {:7}, {:7}, {:8.1f}, {:8.1f}\n'.format(
-                min(self.turn_counts), max(self.turn_counts), mean(self.turn_counts), median(self.turn_counts))
-            s += 'Solve time  :{:7.3f}s,{:7.3f}s, {:7.3f}s, {:7.3f}s\n'.format(
-                min(self.solve_times), max(self.solve_times), mean(self.solve_times), median(self.solve_times))
-            s += 'Exec time   :{:7.3f}s,{:7.3f}s, {:7.3f}s, {:7.3f}s\n'.format(
-                min(self.exec_times), max(self.exec_times), mean(self.exec_times), median(self.exec_times))
             s += 'Win Count: {}'.format(self.win_counts[-1])
-        except ValueError:
+        except IndexError:
             pass
         return s
 
